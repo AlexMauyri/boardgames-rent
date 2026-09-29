@@ -3,8 +3,6 @@ services:
     image: postgres:18
     container_name: boardgame_postgres
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -23,9 +21,65 @@ services:
       retries: 10
       start_period: 10s
 
+  rustfs:
+    image: rustfs/rustfs:1.0.0
+    container_name: boardgame_rustfs
+    restart: unless-stopped
+    command: /data --console-address ":9001"
+    env_file:
+      - .env
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY}
+    ports:
+      - "${RUSTFS_API_PORT:-9000}:9000"
+      - "${RUSTFS_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - boardgame_rustfs_data:/data
+    networks:
+      - boardgame_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  rustfs-init:
+    image: rustfs/rc:latest
+    container_name: boardgame_rustfs_init
+    restart: "no"
+    depends_on:
+      rustfs:
+        condition: service_healthy
+    env_file:
+      - .env
+    networks:
+      - boardgame_net
+    volumes:
+      - ./policies:/policies:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        rc alias set local http://rustfs:9000 "$$RUSTFS_ACCESS_KEY" "$$RUSTFS_SECRET_KEY"
+
+        rc mb --ignore-existing local/board-game-covers
+        rc anonymous set download local/board-game-covers
+
+        rc admin policy create local covers-write /policies/board-game-covers-write.json 2>/dev/null || true
+
+        rc admin service-account create local/ "$$MINIO_APP_ACCESS_KEY" "$$MINIO_APP_SECRET_KEY" --policy /policies/board-game-covers-write.json 2>/dev/null || true
+
+        echo "RustFS init done"
+        rc anonymous get local/board-game-covers
+        rc admin service-account ls local
+
 volumes:
   boardgame_pg_data:
     name: boardgame_pg_data
+  boardgame_rustfs_data:
+    name: boardgame_rustfs_data
 
 networks:
   boardgame_net:
