@@ -57,7 +57,7 @@ services:
     networks:
       - boardgame_net
     volumes:
-      - ./policies:/policies:ro
+      - ./infra/rustfs/policies:/policies:ro
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
@@ -69,11 +69,35 @@ services:
 
         rc admin policy create local covers-write /policies/board-game-covers-write.json 2>/dev/null || true
 
-        rc admin service-account create local/ "$$MINIO_APP_ACCESS_KEY" "$$MINIO_APP_SECRET_KEY" --policy /policies/board-game-covers-write.json 2>/dev/null || true
+        rc admin service-account create local/ "$$RUSTFS_APP_ACCESS_KEY" "$$RUSTFS_APP_SECRET_KEY" --policy /policies/board-game-covers-write.json 2>/dev/null || true
 
         echo "RustFS init done"
         rc anonymous get local/board-game-covers
         rc admin service-account ls local
+  
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: boardgame_backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    networks:
+      - boardgame_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rustfs:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
 volumes:
   boardgame_pg_data:
