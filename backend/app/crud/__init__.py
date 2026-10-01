@@ -4,7 +4,7 @@ from app.crud.base import CRUDBase
 from app.crud.board_game import (
     CRUDBoardGame,
     board_game,
-    set_board_game_categories,
+    set_categories,
 )
 from app.crud.category import CRUDCategory, category
 from app.crud.client import CRUDClient, client
@@ -15,7 +15,7 @@ __all__ = [
     "CRUDBase",
     "CRUDBoardGame",
     "board_game",
-    "set_board_game_categories",
+    "set_categories",
     "CRUDCategory",
     "category",
     "CRUDClient",

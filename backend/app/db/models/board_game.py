@@ -1,3 +1,5 @@
+"""Board game catalog model."""
+
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
@@ -12,6 +14,21 @@ if TYPE_CHECKING:
 
 
 class BoardGame(Base):
+    """A catalog entry describing a game model.
+
+    Attributes:
+        id: Primary key.
+        title: Display name of the game.
+        description: Free-form text, optionally including short rules.
+        min_players: Minimum supported player count, at least 1.
+        max_players: Maximum supported player count, at least `min_players`.
+        playtime_minutes: Average play time of one session.
+        daily_price: Rental price per day, non-negative.
+        deposit_price: Refundable deposit, non-negative.
+        cover_key: S3 object key of the cover image, or None.
+        categories: The categories this game is tagged with.
+    """
+
     __tablename__ = "board_games"
     __table_args__ = (
         CheckConstraint("min_players > 0", name="min_players"),

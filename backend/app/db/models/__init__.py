@@ -1,8 +1,4 @@
-"""Model registry. Importing this package populates ``Base.metadata``.
-
-Alembic's env.py imports this module for its side effect; nothing else should
-need to import individual model modules directly.
-"""
+"""Model registry."""
 
 from app.db.models.board_game import BoardGame
 from app.db.models.category import Category

@@ -1,3 +1,5 @@
+"""Game category model."""
+
 from typing import TYPE_CHECKING
 
 from sqlalchemy import String
@@ -11,6 +13,14 @@ if TYPE_CHECKING:
 
 
 class Category(Base):
+    """A genre tag applied to board games.
+
+    Attributes:
+        id: Primary key.
+        name: Unique category name.
+        games: Board games tagged with this category.
+    """
+
     __tablename__ = "categories"
 
     id: Mapped[int] = mapped_column(primary_key=True)

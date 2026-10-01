@@ -1,3 +1,5 @@
+"""Junction table between board games and categories."""
+
 from sqlalchemy import Column, ForeignKey, Integer, Table
 
 from app.db.base import Base
