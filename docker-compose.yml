@@ -74,6 +74,24 @@ services:
         echo "RustFS init done"
         rc anonymous get local/board-game-covers
         rc admin service-account ls local
+
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: boardgame_migrate
+    restart: "no"
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+    networks:
+      - boardgame_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["alembic", "upgrade", "head"]
   
   backend:
     build:
@@ -92,12 +110,38 @@ services:
         condition: service_healthy
       rustfs:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 15s
+
+  backend-test:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.test
+    profiles: ["test"]
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+    volumes:
+      - ./backend:/app
+      - /app/.venv
+    networks:
+      - boardgame_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rustfs:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
 
 volumes:
   boardgame_pg_data:

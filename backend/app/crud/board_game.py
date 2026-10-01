@@ -60,6 +60,8 @@ async def set_categories(
 
     Raises:
         ValueError: One or more ids in `category_ids` do not exist.
+    """
+    
     game.categories = await _load_categories(session, category_ids)
 
 
