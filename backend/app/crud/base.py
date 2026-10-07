@@ -1,5 +1,6 @@
 """Generic async CRUD base."""
 
+from collections.abc import Collection
 from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel
@@ -43,6 +44,30 @@ class CRUDBase(Generic[ModelT, CreateT, UpdateT]):
             The row, or None if no row has that id.
         """
         return await session.get(self.model, id)
+
+    async def get_many(
+        self,
+        session: AsyncSession,
+        ids: Collection[int],
+    ) -> list[ModelT]:
+        """Fetch several rows by primary key in one query, id-ascending.
+
+        Args:
+            session: Active async session.
+            ids: Primary key values. Duplicates are harmless.
+
+        Returns:
+            The rows that exist; ids with no row are silently absent.
+        """
+        if not ids:
+            return []
+        stmt = (
+            select(self.model)
+            .where(self.model.id.in_(set(ids)))
+            .order_by(self.model.id)
+        )
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
 
     async def list(
         self,

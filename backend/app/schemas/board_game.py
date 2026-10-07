@@ -132,3 +132,19 @@ class CoverUploadResponse(BaseModel):
 
     cover_key: str
     cover_url: str
+
+class GameSearchItem(BaseModel):
+    """A catalog game together with how many boxes of it are free.
+
+    Attributes:
+        game: The catalog entry.
+        free_at_point: Free boxes already on the chosen pickup point's shelf;
+            the game can be collected without a delivery.
+        free_elsewhere: Free boxes at other points; the game would have to be
+            delivered first. An estimate: placing the order decides whether
+            the boxes can actually be gathered from a single point.
+    """
+
+    game: BoardGameRead
+    free_at_point: int
+    free_elsewhere: int
