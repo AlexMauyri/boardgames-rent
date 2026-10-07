@@ -5,11 +5,34 @@ import pytest_asyncio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import BoardGame, Category, Client, Employee, PickupPoint
+from app.db.models import (
+    BoardGame,
+    Category,
+    Client,
+    DamageReport,
+    Delivery,
+    Employee,
+    GameCopy,
+    Order,
+    OrderItem,
+    PickupPoint,
+)
 from app.db.session import SessionFactory
 
 
-_CLEANUP_ORDER = (BoardGame, Employee, Client, PickupPoint, Category)
+# Children before parents: every FK to these tables is ON DELETE RESTRICT.
+_CLEANUP_ORDER = (
+    DamageReport,
+    Delivery,
+    OrderItem,
+    Order,
+    GameCopy,
+    BoardGame,
+    Employee,
+    Client,
+    PickupPoint,
+    Category,
+)
 
 
 async def _truncate_all(session: AsyncSession) -> None:
