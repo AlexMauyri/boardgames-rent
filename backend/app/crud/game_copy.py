@@ -33,6 +33,64 @@ class CRUDGameCopy(CRUDBase[GameCopy, GameCopyCreate, GameCopyUpdate]):
         result = await session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_for_update(
+        self,
+        session: AsyncSession,
+        id: int,
+    ) -> GameCopy | None:
+        """Fetch a copy and lock its row until the transaction ends.
+
+        Args:
+            session: Active async session.
+            id: Primary key of the copy.
+
+        Returns:
+            The freshly read copy, or None if no row has that id.
+        """
+        stmt = (
+            select(GameCopy)
+            .where(GameCopy.id == id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        result = await session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def list_filtered(
+        self,
+        session: AsyncSession,
+        *,
+        game_id: int | None = None,
+        point_id: int | None = None,
+        status: str | None = None,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> list[GameCopy]:
+        """List copies matching the given filters, id-ascending.
+
+        Args:
+            session: Active async session.
+            game_id: Keep copies of this catalog game. None disables it.
+            point_id: Keep copies currently at this pickup point. None
+                disables it.
+            status: Keep copies in this status. None disables it.
+            skip: Rows to skip.
+            limit: Maximum rows to return.
+
+        Returns:
+            Matching rows; empty list if none match.
+        """
+        stmt = select(GameCopy)
+        if game_id is not None:
+            stmt = stmt.where(GameCopy.game_id == game_id)
+        if point_id is not None:
+            stmt = stmt.where(GameCopy.current_point_id == point_id)
+        if status is not None:
+            stmt = stmt.where(GameCopy.status == status)
+        stmt = stmt.order_by(GameCopy.id).offset(skip).limit(limit)
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
     async def list_available_for_games(
         self,
         session: AsyncSession,

@@ -105,6 +105,34 @@ class CRUDOrder(CRUDBase[Order, OrderCreate, BaseModel]):
         result = await session.execute(stmt)
         return list(result.scalars().all())
 
+    async def list_by_point(
+        self,
+        session: AsyncSession,
+        point_id: int,
+        *,
+        status: str | None = None,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> list[Order]:
+        """List orders collected at a pickup point, newest first.
+
+        Args:
+            session: Active async session.
+            point_id: Primary key of the pickup point.
+            status: Keep only orders in this status. None disables it.
+            skip: Rows to skip.
+            limit: Maximum rows to return.
+
+        Returns:
+            Matching orders without their lines; empty list if none.
+        """
+        stmt = select(Order).where(Order.pickup_point_id == point_id)
+        if status is not None:
+            stmt = stmt.where(Order.status == status)
+        stmt = stmt.order_by(Order.id.desc()).offset(skip).limit(limit)
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
     async def busy_copy_ids(
         self,
         session: AsyncSession,

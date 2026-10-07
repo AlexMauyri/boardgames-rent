@@ -6,6 +6,12 @@ from app.services.admin_categories import (
     update_category,
 )
 from app.services.admin_clients import activate_client, deactivate_client
+from app.services.admin_copies import (
+    add_game_copy,
+    get_game_copy,
+    list_game_copies,
+    update_game_copy,
+)
 from app.services.admin_employees import (
     assign_manager_to_point,
     change_employee_role,
@@ -35,6 +41,7 @@ from app.services.catalog import (
     list_categories,
     list_pickup_points_public,
 )
+from app.services.damage import report_damage, resolve_damage_report
 from app.services.deliveries import (
     accept_delivery,
     complete_delivery,
@@ -48,6 +55,13 @@ from app.services.exceptions import (
     InvalidTransitionError,
     NotAvailableError,
     NotFoundError,
+)
+from app.services.manager import (
+    accept_return,
+    find_point_order,
+    issue_order,
+    list_point_inventory,
+    list_point_orders,
 )
 from app.services.orders import (
     cancel_order,
@@ -63,8 +77,10 @@ __all__ = [
     "NotAvailableError",
     "NotFoundError",
     "accept_delivery",
+    "accept_return",
     "activate_client",
     "activate_pickup_point",
+    "add_game_copy",
     "add_new_game_to_catalog",
     "assign_manager_to_point",
     "authenticate_client",
@@ -79,20 +95,29 @@ __all__ = [
     "deactivate_client",
     "deactivate_pickup_point",
     "delete_category",
+    "find_point_order",
+    "get_game_copy",
     "get_game_detail",
     "get_order",
+    "issue_order",
     "list_categories",
     "list_client_orders",
     "list_courier_deliveries",
     "list_employees",
+    "list_game_copies",
     "list_open_deliveries",
+    "list_point_inventory",
+    "list_point_orders",
     "list_pickup_points_admin",
     "list_pickup_points_public",
     "register_client",
+    "report_damage",
+    "resolve_damage_report",
     "start_delivery",
     "set_game_categories",
     "update_category",
     "update_employee",
+    "update_game_copy",
     "update_game",
     "update_pickup_point",
 ]

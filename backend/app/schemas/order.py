@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 
 from app.schemas.base import ORMBase
+from app.schemas.damage_report import DamageReportRead, ReturnDamage
 
 OrderStatus = Literal[
     "CREATED",
@@ -87,3 +88,35 @@ class OrderDetailRead(OrderRead):
     """Order with its lines; the order's `items` must be eagerly loaded."""
 
     items: list[OrderItemRead]
+
+
+class OrderReturnCreate(BaseModel):
+    """Payload for accepting a returned order at a pickup point.
+
+    Attributes:
+        damages: Damaged boxes found on inspection, at most one entry per
+            box; empty when everything is intact.
+    """
+
+    damages: list[ReturnDamage] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_unique_boxes(self) -> "OrderReturnCreate":
+        ids = [d.game_copy_id for d in self.damages]
+        if len(ids) != len(set(ids)):
+            raise ValueError("each box may be reported at most once")
+        return self
+
+
+class OrderReturnResult(BaseModel):
+    """Outcome of accepting a return.
+
+    Attributes:
+        order: The completed order.
+        damage_reports: Reports filed during this return.
+        deposit_refund: Deposit paid minus everything withheld.
+    """
+
+    order: OrderRead
+    damage_reports: list[DamageReportRead]
+    deposit_refund: Decimal

@@ -28,6 +28,22 @@ class DamageReportCreate(BaseModel):
     deposit_withheld: Decimal = Field(default=Decimal("0"), ge=0)
 
 
+class ReturnDamage(BaseModel):
+    """One damaged box found while accepting a return.
+
+    The order and the reporting manager are implied by the return itself.
+
+    Attributes:
+        game_copy_id: The damaged box; must belong to the returned order.
+        description: What is damaged or missing.
+        deposit_withheld: Amount kept from the client's deposit, non-negative.
+    """
+
+    game_copy_id: int
+    description: str = Field(min_length=1)
+    deposit_withheld: Decimal = Field(default=Decimal("0"), ge=0)
+
+
 class DamageReportRead(ORMBase):
     """Damage report as returned by the API.
 

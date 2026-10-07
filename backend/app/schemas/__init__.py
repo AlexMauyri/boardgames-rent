@@ -9,7 +9,11 @@ from app.schemas.board_game import (
 )
 from app.schemas.category import CategoryCreate, CategoryRead, CategoryUpdate
 from app.schemas.client import ClientCreate, ClientRead, ClientUpdate
-from app.schemas.damage_report import DamageReportCreate, DamageReportRead
+from app.schemas.damage_report import (
+    DamageReportCreate,
+    DamageReportRead,
+    ReturnDamage,
+)
 from app.schemas.delivery import DeliveryCreate, DeliveryRead, DeliveryStatus
 from app.schemas.employee import (
     EmployeeCreate,
@@ -28,6 +32,8 @@ from app.schemas.order import (
     OrderDetailRead,
     OrderItemRead,
     OrderRead,
+    OrderReturnCreate,
+    OrderReturnResult,
     OrderStatus,
 )
 from app.schemas.pickup_point import (
@@ -65,8 +71,11 @@ __all__ = [
     "OrderDetailRead",
     "OrderItemRead",
     "OrderRead",
+    "OrderReturnCreate",
+    "OrderReturnResult",
     "OrderStatus",
     "PickupPointCreate",
     "PickupPointRead",
     "PickupPointUpdate",
+    "ReturnDamage",
 ]

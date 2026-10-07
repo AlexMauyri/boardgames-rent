@@ -93,3 +93,15 @@ def order_request(
         end_date=start + timedelta(days=days - 1),
         game_ids=game_ids,
     )
+
+
+async def make_manager(
+    session,
+    point_id: int,
+    email: str = "manager@test.io",
+) -> int:
+    row = await create_employee(session, EmployeeCreate(
+        email=email, password="secret1", full_name="Manager", phone="+7",
+        role="MANAGER", pickup_point_id=point_id,
+    ))
+    return row.id

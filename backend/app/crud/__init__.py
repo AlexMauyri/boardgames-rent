@@ -8,6 +8,7 @@ from app.crud.board_game import (
 )
 from app.crud.category import CRUDCategory, category
 from app.crud.client import CRUDClient, client
+from app.crud.damage_report import CRUDDamageReport, damage_report
 from app.crud.delivery import CRUDDelivery, delivery
 from app.crud.employee import CRUDEmployee, employee
 from app.crud.game_copy import CRUDGameCopy, game_copy
@@ -23,6 +24,8 @@ __all__ = [
     "category",
     "CRUDClient",
     "client",
+    "CRUDDamageReport",
+    "damage_report",
     "CRUDDelivery",
     "delivery",
     "CRUDEmployee",
