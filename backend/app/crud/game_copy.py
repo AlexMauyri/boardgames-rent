@@ -2,11 +2,12 @@
 
 from collections.abc import Collection
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud.base import CRUDBase
-from app.db.models import GameCopy, OrderItem
+from app.crud.order import OPEN_STATUSES
+from app.db.models import GameCopy, Order, OrderItem
 from app.schemas import GameCopyCreate, GameCopyUpdate
 
 
@@ -124,6 +125,42 @@ class CRUDGameCopy(CRUDBase[GameCopy, GameCopyCreate, GameCopyUpdate]):
             stmt = stmt.with_for_update()
         result = await session.execute(stmt)
         return list(result.scalars().all())
+
+    async def count_free(
+        self,
+        session: AsyncSession,
+        game_ids: Collection[int],
+    ) -> dict[tuple[int, int], int]:
+        """Count free boxes per game and pickup point.
+
+        A box is free when it is on a shelf and no open order holds it.
+
+        Args:
+            session: Active async session.
+            game_ids: Catalog games to count.
+
+        Returns:
+            Counts keyed by `(game_id, point_id)`; combinations with no free
+            box are absent.
+        """
+        if not game_ids:
+            return {}
+        held = (
+            select(OrderItem.game_copy_id)
+            .join(Order, Order.id == OrderItem.order_id)
+            .where(Order.status.in_(OPEN_STATUSES))
+        )
+        stmt = (
+            select(GameCopy.game_id, GameCopy.current_point_id, func.count())
+            .where(
+                GameCopy.game_id.in_(set(game_ids)),
+                GameCopy.status == "AVAILABLE",
+                GameCopy.id.not_in(held),
+            )
+            .group_by(GameCopy.game_id, GameCopy.current_point_id)
+        )
+        result = await session.execute(stmt)
+        return {(g, p): n for g, p, n in result.all()}
 
     async def list_for_order(
         self,

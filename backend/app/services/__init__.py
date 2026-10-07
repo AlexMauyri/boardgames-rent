@@ -39,7 +39,9 @@ from app.services.auth import (
 from app.services.catalog import (
     get_game_detail,
     list_categories,
+    list_games,
     list_pickup_points_public,
+    search_available_games,
 )
 from app.services.damage import report_damage, resolve_damage_report
 from app.services.deliveries import (
@@ -105,6 +107,7 @@ __all__ = [
     "list_courier_deliveries",
     "list_employees",
     "list_game_copies",
+    "list_games",
     "list_open_deliveries",
     "list_point_inventory",
     "list_point_orders",
@@ -113,6 +116,7 @@ __all__ = [
     "register_client",
     "report_damage",
     "resolve_damage_report",
+    "search_available_games",
     "start_delivery",
     "set_game_categories",
     "update_category",
