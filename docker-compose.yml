@@ -125,8 +125,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      rustfs:
-        condition: service_healthy
+      rustfs-init:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       migrate:
@@ -156,8 +156,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      rustfs:
-        condition: service_healthy
+      rustfs-init:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       migrate:

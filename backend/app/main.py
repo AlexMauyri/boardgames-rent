@@ -4,15 +4,17 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.errors import register_exception_handlers
+from app.api.v1.router import api_router
+from app.cache.client import bootstrap_redis
 from app.storage.client import bootstrap_storage
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup: verify RustFS is reachable and the bucket exists.
-    Shutdown: nothing to tear down (engine and S3 client are process-wide).
-    """
+    """Startup: verify RustFS and Redis are reachable."""
     await bootstrap_storage(app)
+    await bootstrap_redis(app)
     yield
 
 
@@ -20,6 +22,9 @@ app = FastAPI(
     title="Board Game Rental API",
     lifespan=lifespan,
 )
+
+app.include_router(api_router)
+register_exception_handlers(app)
 
 
 @app.get("/health")
