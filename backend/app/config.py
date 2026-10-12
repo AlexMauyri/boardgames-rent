@@ -36,6 +36,16 @@ class Settings(BaseSettings):
         alias="UPLOAD_ALLOWED_MIME_TYPES",
     )
 
+    redis_url: str = Field(alias="REDIS_URL")
+
+    jwt_secret: str = Field(alias="JWT_SECRET")
+    jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
+    access_token_ttl: int = Field(default=900, alias="ACCESS_TOKEN_TTL")
+    refresh_token_ttl: int = Field(
+        default=60 * 60 * 24 * 30,
+        alias="REFRESH_TOKEN_TTL",
+    )
+
     @property
     def database_url(self) -> str:
         """Async asyncpg DSN, assembled from discrete POSTGRES_* vars."""

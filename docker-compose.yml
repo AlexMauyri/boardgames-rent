@@ -75,6 +75,23 @@ services:
         rc anonymous get local/board-game-covers
         rc admin service-account ls local
 
+  redis:
+    image: redis:7-alpine
+    container_name: boardgame_redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_HOST_PORT:-6379}:6379"
+    volumes:
+      - boardgame_redis_data:/data
+    networks:
+      - boardgame_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
   migrate:
     build:
       context: ./backend
@@ -110,6 +127,8 @@ services:
         condition: service_healthy
       rustfs:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       migrate:
         condition: service_completed_successfully
     healthcheck:
@@ -139,6 +158,8 @@ services:
         condition: service_healthy
       rustfs:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       migrate:
         condition: service_completed_successfully
     restart: "no"
@@ -148,6 +169,8 @@ volumes:
     name: boardgame_pg_data
   boardgame_rustfs_data:
     name: boardgame_rustfs_data
+  boardgame_redis_data:
+    name: boardgame_redis_data
 
 networks:
   boardgame_net:
