@@ -24,6 +24,7 @@ from app.services.exceptions import (
     ForbiddenError,
     InvalidTransitionError,
     NotFoundError,
+    ServiceValueError,
 )
 
 
@@ -212,7 +213,7 @@ async def accept_return(
         ForbiddenError: The employee is not an active manager.
         InvalidTransitionError: The order is not ACTIVE, or a box is not
             with the client.
-        ValueError: A reported box is not in the order, or the amounts
+        ServiceValueError: A reported box is not in the order, or the amounts
             withheld exceed the deposit.
     """
     manager = await require_manager(session, manager_id)
@@ -231,12 +232,12 @@ async def accept_return(
     order_copy_ids = {c.id for c in copies}
     for damage in data.damages:
         if damage.game_copy_id not in order_copy_ids:
-            raise ValueError(
+            raise ServiceValueError(
                 f"Box {damage.game_copy_id} is not part of order {order_id}"
             )
     withheld = sum((d.deposit_withheld for d in data.damages), Decimal("0"))
     if withheld > row.deposit_paid:
-        raise ValueError("Amount withheld exceeds the deposit paid")
+        raise ServiceValueError("Amount withheld exceeds the deposit paid")
 
     damaged_ids = {d.game_copy_id for d in data.damages}
     for copy in copies:

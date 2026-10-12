@@ -14,6 +14,7 @@ from app.services import (
     InvalidTransitionError,
     NotAvailableError,
     NotFoundError,
+    ServiceValueError,
     accept_delivery,
     accept_return,
     complete_delivery,
@@ -292,7 +293,7 @@ async def test_return_of_a_box_not_in_the_order_rejected(session):
     w = await _active_order(session)
     stray = await make_copy(session, w["game"], w["point"], "INV-2")
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ServiceValueError):
         await accept_return(session, w["order_id"], w["manager"], _return(
             ReturnDamage(game_copy_id=stray, description="Not ours"),
         ))
@@ -302,7 +303,7 @@ async def test_return_of_a_box_not_in_the_order_rejected(session):
 async def test_withholding_more_than_the_deposit_rejected(session):
     w = await _active_order(session, deposit="1000")
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ServiceValueError):
         await accept_return(session, w["order_id"], w["manager"], _return(
             ReturnDamage(
                 game_copy_id=w["copy_id"], description="Destroyed",

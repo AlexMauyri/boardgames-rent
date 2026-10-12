@@ -13,6 +13,7 @@ from app.services.exceptions import (
     ForbiddenError,
     InvalidTransitionError,
     NotFoundError,
+    ServiceValueError,
 )
 from app.services.manager import require_manager
 
@@ -40,11 +41,11 @@ async def report_damage(
         ForbiddenError: Not an active manager, or the box is at another point.
         InvalidTransitionError: The box is not on a shelf, or an open order
             holds it.
-        ValueError: The report names an order or withholds a deposit.
+        ServiceValueError: The report names an order or withholds a deposit.
     """
     manager = await require_manager(session, manager_id)
     if data.order_id is not None or data.deposit_withheld != 0:
-        raise ValueError(
+        raise ServiceValueError(
             "A routine report has no order and withholds no deposit; "
             "use accept_return for damage found at return"
         )

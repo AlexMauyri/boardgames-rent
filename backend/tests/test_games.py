@@ -17,7 +17,7 @@ from app.services import (
     set_game_categories,
     update_game,
 )
-from app.services.exceptions import NotFoundError
+from app.services.exceptions import NotFoundError, ServiceValueError
 
 
 async def _make_category(session, name="Strategy"):
@@ -46,7 +46,7 @@ async def test_add_new_game_with_categories(session):
 
 
 async def test_add_new_game_unknown_category(session):
-    with pytest.raises(ValueError):
+    with pytest.raises(ServiceValueError):
         await add_new_game_to_catalog(session, BoardGameCreate(
             title="Bad", min_players=1, max_players=2, playtime_minutes=30,
             daily_price=Decimal("1"), deposit_price=Decimal("1"),
@@ -84,7 +84,7 @@ async def test_update_game_valid_range(session):
 
 async def test_update_game_partial_invalid_range(session):
     g = await _make_game(session)
-    with pytest.raises(ValueError):
+    with pytest.raises(ServiceValueError):
         await update_game(session, g.id, BoardGameUpdate(min_players=10))
 
 
@@ -111,7 +111,7 @@ async def test_set_game_categories_clear(session):
 
 async def test_set_game_categories_unknown_id(session):
     g = await _make_game(session)
-    with pytest.raises(ValueError):
+    with pytest.raises(ServiceValueError):
         await set_game_categories(session, g.id, [999999])
 
 

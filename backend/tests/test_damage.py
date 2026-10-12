@@ -11,6 +11,7 @@ from app.services import (
     InvalidTransitionError,
     NotAvailableError,
     NotFoundError,
+    ServiceValueError,
     accept_return,
     create_order,
     issue_order,
@@ -117,11 +118,11 @@ async def test_second_report_on_already_damaged_box_refused(session):
 async def test_routine_report_cannot_name_an_order_or_withhold_deposit(session):
     w = await _shelf(session)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ServiceValueError):
         await report_damage(
             session, w["manager"], _report(w["copy_id"], order_id=1),
         )
-    with pytest.raises(ValueError):
+    with pytest.raises(ServiceValueError):
         await report_damage(
             session, w["manager"],
             _report(w["copy_id"], deposit_withheld=Decimal("10")),

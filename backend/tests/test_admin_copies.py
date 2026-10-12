@@ -6,6 +6,7 @@ from app.schemas import GameCopyCreate, GameCopyUpdate
 from app.services import (
     ConflictError,
     NotFoundError,
+    ServiceValueError,
     add_game_copy,
     deactivate_pickup_point,
     get_game_copy,
@@ -52,7 +53,7 @@ async def test_add_copy_to_inactive_point_rejected(session):
     game = await make_game(session)
     await deactivate_pickup_point(session, point)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ServiceValueError):
         await add_game_copy(session, _new(game, point))
 
 

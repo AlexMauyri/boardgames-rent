@@ -57,6 +57,7 @@ from app.services.exceptions import (
     InvalidTransitionError,
     NotAvailableError,
     NotFoundError,
+    ServiceValueError,
 )
 from app.services.manager import (
     accept_return,
@@ -78,6 +79,7 @@ __all__ = [
     "InvalidTransitionError",
     "NotAvailableError",
     "NotFoundError",
+    "ServiceValueError",
     "accept_delivery",
     "accept_return",
     "activate_client",

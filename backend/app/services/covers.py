@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.crud import board_game
 from app.schemas import CoverUploadResponse
-from app.services.exceptions import NotFoundError
+from app.services.exceptions import NotFoundError, ServiceValueError
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,7 @@ async def upload_cover(
 
     Raises:
         NotFoundError: No board game with that id.
-        ValueError: Content type is not allowed, or the file is too large.
+        ServiceValueError: Content type is not allowed, or the file is too large.
     """
     game = await board_game.get(session, game_id)
     if game is None:
@@ -80,14 +80,14 @@ async def upload_cover(
 
     content_type = file.content_type or ""
     if content_type not in settings.upload_allowed_mime_types:
-        raise ValueError(
+        raise ServiceValueError(
             f"Unsupported content type {content_type!r}; "
             f"allowed: {settings.upload_allowed_mime_types}"
         )
 
     data = await file.read()
     if len(data) > settings.upload_max_bytes:
-        raise ValueError(
+        raise ServiceValueError(
             f"File too large: {len(data)} bytes > {settings.upload_max_bytes}"
         )
 

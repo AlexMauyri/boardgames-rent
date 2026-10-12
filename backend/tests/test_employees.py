@@ -12,7 +12,7 @@ from app.services import (
     list_employees,
     update_employee,
 )
-from app.services.exceptions import ConflictError, NotFoundError
+from app.services.exceptions import ConflictError, NotFoundError, ServiceValueError
 
 
 async def _make_point(session, name="Center"):
@@ -111,7 +111,7 @@ async def test_list_employees_role_filter(session):
 async def test_assign_manager_to_point_rejects_non_manager(session):
     p = await _make_point(session)
     c = await _make_courier(session)
-    with pytest.raises(ValueError):
+    with pytest.raises(ServiceValueError):
         await assign_manager_to_point(session, c.id, p.id)
 
 
@@ -133,7 +133,7 @@ async def test_assign_manager_to_point_missing_point(session):
 async def test_assign_manager_to_point_cannot_clear(session):
     p = await _make_point(session)
     m = await _make_manager(session, p.id)
-    with pytest.raises(ValueError):
+    with pytest.raises(ServiceValueError):
         await assign_manager_to_point(session, m.id, None)
 
 
@@ -159,14 +159,14 @@ async def test_change_role_manager_to_courier_implicit_default(session):
 
 async def test_change_role_courier_to_manager_without_point(session):
     c = await _make_courier(session)
-    with pytest.raises(ValueError):
+    with pytest.raises(ServiceValueError):
         await change_employee_role(session, c.id, "MANAGER")
 
 
 async def test_update_employee_demote_without_point(session):
     p = await _make_point(session)
     m = await _make_manager(session, p.id)
-    with pytest.raises(ValueError):
+    with pytest.raises(ServiceValueError):
         await update_employee(session, m.id, EmployeeUpdate(role="COURIER"))
 
 

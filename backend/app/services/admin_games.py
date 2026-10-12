@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud import board_game, set_categories
 from app.schemas import BoardGameCreate, BoardGameRead, BoardGameUpdate
-from app.services.exceptions import NotFoundError
+from app.services.exceptions import NotFoundError, ServiceValueError
 
 
 async def add_new_game_to_catalog(
@@ -21,9 +21,13 @@ async def add_new_game_to_catalog(
         The created game.
 
     Raises:
-        ValueError: One or more `category_ids` do not exist.
+        ServiceValueError: One or more `category_ids` do not exist.
     """
-    obj = await board_game.create_with_categories(session, data=data)
+    try:
+        obj = await board_game.create_with_categories(session, data=data)
+    except ValueError as exc:
+        raise ServiceValueError(str(exc)) from exc
+
     result = BoardGameRead.model_validate(obj)
     await session.commit()
     return result
@@ -46,20 +50,24 @@ async def update_game(
 
     Raises:
         NotFoundError: No board game with that id.
-        ValueError: `data` is inconsistent against the current row, or
+        ServiceValueError: `data` is inconsistent against the current row, or
             `category_ids` is present and contains unknown ids.
     """
     game = await board_game.get_with_categories(session, game_id)
     if game is None:
         raise NotFoundError("BoardGame", game_id)
 
-    data.validate_against(game)
+    try:
+        data.validate_against(game)
+    except ValueError as exc:
+        raise ServiceValueError(str(exc)) from exc
 
-    obj = await board_game.update_with_categories(
-        session,
-        id=game_id,
-        data=data,
-    )
+    try:
+        obj = await board_game.update_with_categories(
+            session, id=game_id, data=data,
+        )
+    except ValueError as exc:
+        raise ServiceValueError(str(exc)) from exc
 
     result = BoardGameRead.model_validate(obj)
     await session.commit()
@@ -84,13 +92,17 @@ async def set_game_categories(
 
     Raises:
         NotFoundError: No board game with that id.
-        ValueError: One or more `category_ids` do not exist.
+        ServiceValueError: One or more `category_ids` do not exist.
     """
     game = await board_game.get_with_categories(session, game_id)
     if game is None:
         raise NotFoundError("BoardGame", game_id)
 
-    await set_categories(session, game, category_ids)
+    try:
+        await set_categories(session, game, category_ids)
+    except ValueError as exc:
+        raise ServiceValueError(str(exc)) from exc
+
     await session.flush()
 
     result = BoardGameRead.model_validate(game)

@@ -109,3 +109,17 @@ class ForbiddenError(Exception):
         """
         self.reason = reason
         super().__init__(reason)
+
+
+class ServiceValueError(Exception):
+    """A service rejected its input for a domain-specific reason.
+
+    Raised when the caller's data is well-formed but cannot be accepted
+    given the current state of the system — e.g. a pickup point is
+    inactive, an order is booked for a past date, or a merged update
+    would violate a cross-field invariant.
+
+    Distinct from ValueError so the HTTP layer can map it to 422 without
+    also swallowing unrelated ValueErrors from libraries or from
+    programmer mistakes in the CRUD layer.
+    """

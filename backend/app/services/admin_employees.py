@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import hash_password
 from app.crud import employee, pickup_point
 from app.schemas import EmployeeCreate, EmployeeRead, EmployeeUpdate
-from app.services.exceptions import ConflictError, NotFoundError
+from app.services.exceptions import ConflictError, NotFoundError, ServiceValueError
 
 
 def _is_employee_email_violation(exc: IntegrityError) -> bool:
@@ -114,13 +114,16 @@ async def update_employee(
 
     Raises:
         NotFoundError: No employee with that id.
-        ValueError: `data` is inconsistent against the current row.
+        ServiceValueError: `data` is inconsistent against the current row.
     """
     current = await employee.get(session, employee_id)
     if current is None:
         raise NotFoundError("Employee", employee_id)
 
-    data.validate_against(current)
+    try:
+        data.validate_against(current)
+    except ValueError as exc:
+        raise ServiceValueError(str(exc)) from exc
 
     obj = await employee.update(
         session,
@@ -151,7 +154,7 @@ async def assign_manager_to_point(
     Raises:
         NotFoundError: No employee with that id, or `pickup_point_id` is
             given but no pickup point with that id exists.
-        ValueError: The employee's role is not MANAGER, or `pickup_point_id`
+        ServiceValueError: The employee's role is not MANAGER, or `pickup_point_id`
             is None.
     """
     emp = await employee.get(session, employee_id)
@@ -159,13 +162,13 @@ async def assign_manager_to_point(
         raise NotFoundError("Employee", employee_id)
 
     if emp.role != "MANAGER":
-        raise ValueError(
+        raise ServiceValueError(
             f"Employee {employee_id} has role {emp.role!r}; "
             "only MANAGER employees can be assigned a pickup point."
         )
 
     if pickup_point_id is None:
-        raise ValueError(
+        raise ServiceValueError(
             "Cannot clear pickup_point_id on a MANAGER; "
             "use change_employee_role to change the role first."
         )
@@ -202,14 +205,17 @@ async def change_employee_role(
 
     Raises:
         NotFoundError: No employee with that id.
-        ValueError: The requested (role, pickup_point_id) pairing is invalid.
+        ServiceValueError: The requested (role, pickup_point_id) pairing is invalid.
     """
     emp = await employee.get(session, employee_id)
     if emp is None:
         raise NotFoundError("Employee", employee_id)
 
     payload = EmployeeUpdate(role=new_role, pickup_point_id=pickup_point_id)
-    payload.validate_against(emp)
+    try:
+        payload.validate_against(emp)
+    except ValueError as exc:
+        raise ServiceValueError(str(exc)) from exc
 
     obj = await employee.update(
         session,

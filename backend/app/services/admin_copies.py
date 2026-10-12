@@ -10,7 +10,7 @@ from app.schemas import (
     GameCopyStatus,
     GameCopyUpdate,
 )
-from app.services.exceptions import ConflictError, NotFoundError
+from app.services.exceptions import ConflictError, NotFoundError, ServiceValueError
 
 _INVENTORY_CONSTRAINT = "uq_game_copies_inventory_number"
 
@@ -30,7 +30,7 @@ async def add_game_copy(
 
     Raises:
         NotFoundError: The game or the pickup point does not exist.
-        ValueError: The pickup point is not active.
+        ServiceValueError: The pickup point is not active.
         ConflictError: A box with that inventory number already exists.
     """
     if await board_game.get(session, data.game_id) is None:
@@ -39,7 +39,7 @@ async def add_game_copy(
     if point is None:
         raise NotFoundError("PickupPoint", data.current_point_id)
     if not point.is_active:
-        raise ValueError("Pickup point is not active")
+        raise ServiceValueError("Pickup point is not active")
     if await game_copy.get_by_inventory_number(session, data.inventory_number):
         raise ConflictError("GameCopy", data.inventory_number)
 

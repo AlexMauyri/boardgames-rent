@@ -5,6 +5,7 @@ import pytest
 from app.schemas import BoardGameCreate, CategoryCreate
 from app.services import (
     NotFoundError,
+    ServiceValueError,
     add_new_game_to_catalog,
     cancel_order,
     create_category,
@@ -131,7 +132,7 @@ async def test_search_inactive_point_rejected(session):
     here = await make_point(session, "Center")
     await deactivate_pickup_point(session, here)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ServiceValueError):
         await search_available_games(session, here)
 
 

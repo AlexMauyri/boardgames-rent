@@ -13,6 +13,7 @@ from app.services import (
     InvalidTransitionError,
     NotAvailableError,
     NotFoundError,
+    ServiceValueError,
     accept_delivery,
     cancel_order,
     create_order,
@@ -143,7 +144,7 @@ async def test_start_date_in_the_past_rejected(session):
     await make_copy(session, game, point, "INV-1")
     yesterday = date.today() - timedelta(days=1)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ServiceValueError):
         await create_order(session, client_id, OrderCreate(
             pickup_point_id=point, start_date=yesterday, end_date=yesterday,
             game_ids=[game],
@@ -185,7 +186,7 @@ async def test_inactive_pickup_point_rejected(session):
     await make_copy(session, game, point, "INV-1")
     await deactivate_pickup_point(session, point)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ServiceValueError):
         await create_order(session, client_id, order_request(point, [game]))
 
 

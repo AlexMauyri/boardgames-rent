@@ -23,6 +23,7 @@ from app.services.exceptions import (
     ForbiddenError,
     InvalidTransitionError,
     NotFoundError,
+    ServiceValueError,
 )
 from app.services.fulfilment import plan_fulfilment
 from app.services.pricing import calculate_price
@@ -55,14 +56,14 @@ async def create_order(
         The created order with its lines.
 
     Raises:
-        ValueError: `start_date` is in the past, or the pickup point is not
+        ServiceValueError: `start_date` is in the past, or the pickup point is not
             active.
         NotFoundError: The client, the pickup point or a game does not exist.
         ForbiddenError: The client account is disabled.
         NotAvailableError: The games cannot be supplied from current stock.
     """
     if data.start_date < date.today():
-        raise ValueError("start_date must not be in the past")
+        raise ServiceValueError("start_date must not be in the past")
 
     client_row = await client.get(session, client_id)
     if client_row is None:
@@ -74,7 +75,7 @@ async def create_order(
     if point is None:
         raise NotFoundError("PickupPoint", data.pickup_point_id)
     if not point.is_active:
-        raise ValueError("Pickup point is not active")
+        raise ServiceValueError("Pickup point is not active")
 
     needed = Counter(data.game_ids)
     games = {g.id: g for g in await board_game.get_many(session, list(needed))}
@@ -82,8 +83,6 @@ async def create_order(
         if game_id not in games:
             raise NotFoundError("BoardGame", game_id)
 
-    # Lock every candidate box first: two concurrent orders for the same game
-    # then queue up instead of both claiming the same box.
     candidates = await game_copy.list_available_for_games(
         session, list(needed), lock=True,
     )

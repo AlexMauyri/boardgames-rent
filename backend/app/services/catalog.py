@@ -9,7 +9,7 @@ from app.schemas import (
     GameSearchItem,
     PickupPointRead,
 )
-from app.services.exceptions import NotFoundError
+from app.services.exceptions import NotFoundError, ServiceValueError
 
 
 async def list_categories(
@@ -133,13 +133,13 @@ async def search_available_games(
 
     Raises:
         NotFoundError: No such pickup point.
-        ValueError: The pickup point is not active.
+        ServiceValueError: The pickup point is not active.
     """
     point = await pickup_point.get(session, pickup_point_id)
     if point is None:
         raise NotFoundError("PickupPoint", pickup_point_id)
     if not point.is_active:
-        raise ValueError("Pickup point is not active")
+        raise ServiceValueError("Pickup point is not active")
 
     # The stock filter is applied after the SQL filters, so paging happens
     # here and not in the query; the catalog is small.

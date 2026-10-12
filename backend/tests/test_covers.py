@@ -10,7 +10,7 @@ from starlette.datastructures import Headers
 from app.config import settings
 from app.crud import board_game
 from app.services.covers import delete_cover, upload_cover
-from app.services.exceptions import NotFoundError
+from app.services.exceptions import NotFoundError, ServiceValueError
 from tests.helpers import make_game
 
 
@@ -45,7 +45,7 @@ async def test_upload_rejects_disallowed_mime(session, mock_s3):
     game = await make_game(session)
     file = _upload(b"data", content_type="text/plain")
 
-    with pytest.raises(ValueError, match="Unsupported content type"):
+    with pytest.raises(ServiceValueError, match="Unsupported content type"):
         await upload_cover(session, mock_s3, game, file)
     mock_s3.put_object.assert_not_called()
 
@@ -55,7 +55,7 @@ async def test_upload_rejects_oversized_file(session, mock_s3, monkeypatch):
     game = await make_game(session)
     file = _upload(b"12345", content_type="image/png")
 
-    with pytest.raises(ValueError, match="too large"):
+    with pytest.raises(ServiceValueError, match="too large"):
         await upload_cover(session, mock_s3, game, file)
     mock_s3.put_object.assert_not_called()
 
