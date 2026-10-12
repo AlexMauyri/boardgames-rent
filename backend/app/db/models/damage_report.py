@@ -15,7 +15,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.base import Base
+from app.db.mixins import IdModel
 
 if TYPE_CHECKING:
     from app.db.models.employee import Employee
@@ -23,11 +23,10 @@ if TYPE_CHECKING:
     from app.db.models.order import Order
 
 
-class DamageReport(Base):
+class DamageReport(IdModel):
     """A record of damage or missing parts found on a game box.
 
     Attributes:
-        id: Primary key.
         game_copy_id: The damaged box.
         order_id: The rental during which the damage was found, or None for a
             routine inspection.
@@ -46,7 +45,6 @@ class DamageReport(Base):
         CheckConstraint("deposit_withheld >= 0", name="deposit_withheld"),
     )
 
-    id: Mapped[int] = mapped_column(primary_key=True)
     game_copy_id: Mapped[int] = mapped_column(
         ForeignKey("game_copies.id", ondelete="RESTRICT"),
         index=True,

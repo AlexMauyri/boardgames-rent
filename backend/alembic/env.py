@@ -24,8 +24,6 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
-# compare_type catches column type changes; compare_server_default catches
-# changes to server-side DEFAULTs. Neither is on by default in the template.
 AUTOGENERATE_OPTS: dict[str, object] = {
     "compare_type": True,
     "compare_server_default": True,

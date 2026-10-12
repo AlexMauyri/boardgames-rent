@@ -13,7 +13,6 @@ from app.crud.base import CRUDBase
 from app.db.models import Order, OrderItem
 from app.schemas import OrderCreate
 
-# Statuses in which an order still holds its boxes.
 OPEN_STATUSES = (
     "CREATED",
     "NEEDS_TRANSFER",

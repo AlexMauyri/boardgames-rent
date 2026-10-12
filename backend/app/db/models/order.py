@@ -16,7 +16,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.base import Base
+from app.db.mixins import IdModel
 
 if TYPE_CHECKING:
     from app.db.models.client import Client
@@ -25,11 +25,10 @@ if TYPE_CHECKING:
     from app.db.models.pickup_point import PickupPoint
 
 
-class Order(Base):
+class Order(IdModel):
     """A client's rental request for one or more game boxes.
 
     Attributes:
-        id: Primary key; the booking number shown to the client.
         client_id: The client who placed the order.
         pickup_point_id: Pickup point where the client collects the games.
         start_date: First day of the rental.
@@ -57,7 +56,6 @@ class Order(Base):
         ),
     )
 
-    id: Mapped[int] = mapped_column(primary_key=True)
     client_id: Mapped[int] = mapped_column(
         ForeignKey("clients.id", ondelete="RESTRICT"),
         index=True,

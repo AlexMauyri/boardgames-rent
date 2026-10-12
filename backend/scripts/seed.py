@@ -20,7 +20,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud import pickup_point
-from app.db import models  # noqa: F401  (registers every table on the metadata)
+from app.db import models
 from app.db.base import Base
 from app.db.session import SessionFactory, engine
 from app.schemas import (
@@ -42,7 +42,6 @@ from app.services import (
 )
 from scripts.console import confirm_wipe, database_label, setup_output
 
-# Every seeded account uses this password. Local test data only.
 SEED_PASSWORD = "demo-password"
 EMAIL_DOMAIN = "bgrent.io"
 
@@ -55,7 +54,6 @@ _CLOSED_POINT = ("Запад", "ул. Кирова, 3", "+7 900 000-00-04")
 
 _CATEGORIES = ("Стратегии", "Кооператив", "Вечериночные", "Семейные")
 
-# title, min players, max players, minutes, daily price, deposit, categories
 _GAMES = (
     ("Каркассон", 2, 5, 45, "80", "500", ("Семейные", "Стратегии")),
     ("Катан", 3, 4, 90, "120", "800", ("Стратегии", "Семейные")),
@@ -65,7 +63,6 @@ _GAMES = (
     ("Мафия", 6, 12, 40, "60", "300", ("Вечериночные",)),
 )
 
-# game title -> pickup points holding one box each (a point twice = two boxes)
 _STOCK = {
     "Каркассон": ("Центр", "Север"),
     "Катан": ("Центр", "Юг"),

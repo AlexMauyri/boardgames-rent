@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.base import Base
+from app.db.mixins import IdModel
 
 if TYPE_CHECKING:
     from app.db.models.employee import Employee
@@ -14,11 +14,10 @@ if TYPE_CHECKING:
     from app.db.models.pickup_point import PickupPoint
 
 
-class Delivery(Base):
+class Delivery(IdModel):
     """A courier task moving an order's box between two pickup points.
 
     Attributes:
-        id: Primary key.
         order_id: The order being served; unique, so an order has at most one
             delivery (1:1).
         courier_id: The assigned courier, or None until someone accepts. That
@@ -45,7 +44,6 @@ class Delivery(Base):
         ),
     )
 
-    id: Mapped[int] = mapped_column(primary_key=True)
     order_id: Mapped[int] = mapped_column(
         ForeignKey("orders.id", ondelete="RESTRICT"),
         unique=True,

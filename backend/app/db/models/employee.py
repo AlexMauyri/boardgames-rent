@@ -6,17 +6,16 @@ from typing import TYPE_CHECKING
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.base import Base
+from app.db.mixins import IdModel
 
 if TYPE_CHECKING:
     from app.db.models.pickup_point import PickupPoint
 
 
-class Employee(Base):
+class Employee(IdModel):
     """A courier, pickup point manager, or administrator.
 
     Attributes:
-        id: Primary key.
         email: Login address, unique and case-sensitive.
         password_hash: Argon2id digest. Plaintext is never stored.
         full_name: Display name of the employee.
@@ -38,7 +37,6 @@ class Employee(Base):
         ),
     )
 
-    id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str] = mapped_column(String(255), unique=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     full_name: Mapped[str] = mapped_column(String(150))

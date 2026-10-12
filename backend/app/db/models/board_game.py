@@ -6,18 +6,17 @@ from typing import TYPE_CHECKING
 from sqlalchemy import CheckConstraint, Numeric, SmallInteger, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.base import Base
+from app.db.mixins import IdModel
 from app.db.models.game_category import game_categories
 
 if TYPE_CHECKING:
     from app.db.models.category import Category
 
 
-class BoardGame(Base):
+class BoardGame(IdModel):
     """A catalog entry describing a game model.
 
     Attributes:
-        id: Primary key.
         title: Display name of the game.
         description: Free-form text, optionally including short rules.
         min_players: Minimum supported player count, at least 1.
@@ -37,7 +36,6 @@ class BoardGame(Base):
         CheckConstraint("deposit_price >= 0", name="deposit_price"),
     )
 
-    id: Mapped[int] = mapped_column(primary_key=True)
     title: Mapped[str] = mapped_column(String(150))
     description: Mapped[str | None] = mapped_column(Text)
     min_players: Mapped[int] = mapped_column(SmallInteger)

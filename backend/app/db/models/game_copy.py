@@ -5,18 +5,17 @@ from typing import TYPE_CHECKING
 from sqlalchemy import CheckConstraint, ForeignKey, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.base import Base
+from app.db.mixins import IdModel
 
 if TYPE_CHECKING:
     from app.db.models.board_game import BoardGame
     from app.db.models.pickup_point import PickupPoint
 
 
-class GameCopy(Base):
+class GameCopy(IdModel):
     """One physical box of a catalog game, tracked by inventory number.
 
     Attributes:
-        id: Primary key.
         game_id: The catalog entry this box is a copy of.
         current_point_id: Pickup point holding the box; None while the box is
             with a client or in transit.
@@ -41,7 +40,6 @@ class GameCopy(Base):
         ),
     )
 
-    id: Mapped[int] = mapped_column(primary_key=True)
     game_id: Mapped[int] = mapped_column(
         ForeignKey("board_games.id", ondelete="RESTRICT"),
         index=True,
