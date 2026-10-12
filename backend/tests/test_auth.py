@@ -1,8 +1,9 @@
-"""Tests for register_client, authenticate_client, authenticate_employee."""
+"""Tests for auth"""
 
 import pytest
+from pydantic import ValidationError
 
-from app.schemas import ClientCreate, EmployeeCreate
+from app.schemas import ClientCreate, EmployeeCreate, LoginRequest, RefreshRequest, TokenPair
 from app.services import (
     authenticate_client,
     authenticate_employee,
@@ -83,3 +84,34 @@ async def test_authenticate_employee_wrong_password(session):
     ))
     res = await authenticate_employee(session, "emp@test.io", "wrong")
     assert res is None
+
+
+def test_login_request_accepts_valid_email_and_password():
+    req = LoginRequest(email="alice@test.io", password="secret1")
+    assert req.email == "alice@test.io"
+    assert req.password == "secret1"
+
+
+def test_login_request_rejects_invalid_email():
+    with pytest.raises(ValidationError):
+        LoginRequest(email="not-an-email", password="secret1")
+
+
+def test_login_request_rejects_empty_password():
+    with pytest.raises(ValidationError):
+        LoginRequest(email="alice@test.io", password="")
+
+
+def test_token_pair_defaults_to_bearer():
+    pair = TokenPair(access_token="a", refresh_token="r")
+    assert pair.token_type == "bearer"
+
+
+def test_token_pair_rejects_unknown_token_type():
+    with pytest.raises(ValidationError):
+        TokenPair(access_token="a", refresh_token="r", token_type="mac")
+
+
+def test_refresh_request_requires_non_empty_token():
+    with pytest.raises(ValidationError):
+        RefreshRequest(refresh_token="")

@@ -42,6 +42,7 @@ from app.schemas.pickup_point import (
     PickupPointRead,
     PickupPointUpdate,
 )
+from app.schemas.auth import LoginRequest, RefreshRequest, TokenPair
 
 __all__ = [
     "ORMBase",
@@ -80,4 +81,7 @@ __all__ = [
     "PickupPointRead",
     "PickupPointUpdate",
     "ReturnDamage",
+    "LoginRequest",
+    "RefreshRequest",
+    "TokenPair",
 ]
