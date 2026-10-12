@@ -18,6 +18,7 @@ from app.db.models import (
     PickupPoint,
 )
 from app.db.session import SessionFactory
+from app.cache.client import build_redis
 
 
 # Children before parents: every FK to these tables is ON DELETE RESTRICT.
@@ -54,3 +55,18 @@ async def session() -> AsyncSession:
     async with SessionFactory() as s:
         await _truncate_all(s)
         yield s
+
+
+@pytest_asyncio.fixture
+async def redis_client():
+    """Yield a Redis client pointing at the test DB, emptied first.
+
+    Assumes REDIS_URL points at a database dedicated to tests — the
+    fixture runs FLUSHDB, which wipes whatever is in that DB.
+    """
+    client = build_redis()
+    await client.flushdb()
+    try:
+        yield client
+    finally:
+        await client.aclose()
