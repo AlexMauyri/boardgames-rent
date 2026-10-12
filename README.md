@@ -112,28 +112,7 @@
 10. **Развёртывание (Docker).**
     - каждый компонент системы (Nginx, FastAPI, gRPC-сервис, Notification Service, PostgreSQL, Redis, RabbitMQ, S3 (например, MinIO)) запускается в отдельном Docker-контейнере.
 
-```mermaid
-flowchart LR
-    UI["Клиентские интерфейсы<br/>(Web / UI)"]
-    NGINX["Nginx<br/>(Reverse Proxy)"]
-    API["FastAPI Service"]
-    NOTIF["Notification Service"]
-    GRPC["gRPC-сервис<br/>подбора игр"]
-    PG[("PostgreSQL")]
-    REDIS[("Redis")]
-    MQ{{"RabbitMQ"}}
-    S3[("S3<br/>(MinIO)")]
-
-    UI -- "HTTP REST / WebSocket" --> NGINX
-    NGINX -- "HTTP" --> API
-    NGINX -- "WebSocket (Upgrade)" --> NOTIF
-    API -- "SQLAlchemy ORM" --> PG
-    API -- "кэш, refresh-токены" --> REDIS
-    API -- "gRPC" --> GRPC
-    API -- "публикация событий" --> MQ
-    MQ -- "подписка на очереди" --> NOTIF
-    API -- "загрузка обложек,<br/>presigned-URL" --> S3
-```
+![](img/system_components.png)
 
 Рисунок 1 – Схема взаимодействия компонентов распределённой системы (с S3-хранилищем обложек игр)
 
@@ -184,115 +163,7 @@ flowchart LR
 
 ## 4.2 Физическая схема базы данных (PostgreSQL)
 
-```mermaid
-erDiagram
-    pickup_points {
-        SERIAL id PK
-        VARCHAR_100 name UK
-        VARCHAR_255 address
-        VARCHAR_20 phone
-        BOOLEAN is_active
-    }
-    clients {
-        SERIAL id PK
-        VARCHAR_255 email UK
-        VARCHAR_255 password_hash
-        VARCHAR_150 full_name
-        BOOLEAN is_active
-        VARCHAR_20 phone
-        TIMESTAMPTZ created_at
-    }
-    employees {
-        SERIAL id PK
-        VARCHAR_255 email UK
-        VARCHAR_255 password_hash
-        VARCHAR_150 full_name
-        BOOLEAN is_active
-        VARCHAR_20 phone
-        VARCHAR_20 role
-        INTEGER pickup_point_id FK
-        TIMESTAMPTZ created_at
-    }
-    categories {
-        SERIAL id PK
-        VARCHAR_50 name UK
-    }
-    board_games {
-        SERIAL id PK
-        VARCHAR_150 title
-        TEXT description
-        SMALLINT min_players
-        SMALLINT max_players
-        SMALLINT playtime_minutes
-        NUMERIC_10_2 daily_price
-        NUMERIC_10_2 deposit_price
-        VARCHAR_255 cover_key
-    }
-    game_categories {
-        INTEGER game_id PK, FK
-        INTEGER category_id PK, FK
-    }
-    game_copies {
-        SERIAL id PK
-        INTEGER game_id FK
-        INTEGER current_point_id FK
-        VARCHAR_50 inventory_number UK
-        VARCHAR_30 status
-    }
-    orders {
-        SERIAL id PK
-        INTEGER client_id FK
-        INTEGER pickup_point_id FK
-        DATE start_date
-        DATE end_date
-        NUMERIC_10_2 total_price
-        NUMERIC_10_2 deposit_paid
-        VARCHAR_30 status
-        TIMESTAMPTZ created_at
-    }
-    order_items {
-        INTEGER order_id PK, FK
-        INTEGER game_copy_id PK, FK
-        NUMERIC_10_2 price_at_rental
-    }
-    deliveries {
-        SERIAL id PK
-        INTEGER order_id FK, UK
-        INTEGER courier_id FK
-        INTEGER from_point_id FK
-        INTEGER to_point_id FK
-        VARCHAR_30 status
-        TIMESTAMPTZ created_at
-        TIMESTAMPTZ delivered_at
-    }
-    damage_reports {
-        SERIAL id PK
-        INTEGER game_copy_id FK
-        INTEGER order_id FK
-        INTEGER reported_by FK
-        TEXT description
-        NUMERIC_10_2 deposit_withheld
-        TIMESTAMPTZ created_at
-        TIMESTAMPTZ resolved_at
-    }
-
-    board_games ||--o{ game_categories : "game_id"
-    categories ||--o{ game_categories : "category_id"
-    board_games ||--o{ game_copies : "game_id"
-    pickup_points |o--o{ game_copies : "current_point_id"
-    pickup_points |o--o{ employees : "pickup_point_id"
-    clients ||--o{ orders : "client_id"
-    pickup_points ||--o{ orders : "pickup_point_id"
-    orders ||--o{ order_items : "order_id"
-    game_copies ||--o{ order_items : "game_copy_id"
-    orders ||--o| deliveries : "order_id"
-    employees |o--o{ deliveries : "courier_id"
-    pickup_points ||--o{ deliveries : "from_point_id"
-    pickup_points ||--o{ deliveries : "to_point_id"
-    game_copies ||--o{ damage_reports : "game_copy_id"
-    orders |o--o{ damage_reports : "order_id"
-    employees ||--o{ damage_reports : "reported_by"
-```
+![](img/er_diagram.png)
 
 Рисунок 2 – Физическая ER-диаграмма базы данных
 
