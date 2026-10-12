@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+
+# Virtual envs
+.venv/
+venv/
+
+# Secrets & local config
+.env
+.env.*
+!.env.example
+
+# VCS
+.git/
+.gitignore
+.dockerignore

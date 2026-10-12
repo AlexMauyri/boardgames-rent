@@ -1,0 +1,155 @@
+services:
+  postgres:
+    image: postgres:18
+    container_name: boardgame_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
+    volumes:
+      - boardgame_pg_data:/var/lib/postgresql
+    networks:
+      - boardgame_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  rustfs:
+    image: rustfs/rustfs:1.0.0
+    container_name: boardgame_rustfs
+    restart: unless-stopped
+    command: /data --console-address ":9001"
+    env_file:
+      - .env
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY}
+    ports:
+      - "${RUSTFS_API_PORT:-9000}:9000"
+      - "${RUSTFS_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - boardgame_rustfs_data:/data
+    networks:
+      - boardgame_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  rustfs-init:
+    image: rustfs/rc:latest
+    container_name: boardgame_rustfs_init
+    restart: "no"
+    depends_on:
+      rustfs:
+        condition: service_healthy
+    env_file:
+      - .env
+    networks:
+      - boardgame_net
+    volumes:
+      - ./infra/rustfs/policies:/policies:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        rc alias set local http://rustfs:9000 "$$RUSTFS_ACCESS_KEY" "$$RUSTFS_SECRET_KEY"
+
+        rc mb --ignore-existing local/board-game-covers
+        rc anonymous set download local/board-game-covers
+
+        rc admin policy create local covers-write /policies/board-game-covers-write.json 2>/dev/null || true
+
+        rc admin service-account create local/ "$$RUSTFS_APP_ACCESS_KEY" "$$RUSTFS_APP_SECRET_KEY" --policy /policies/board-game-covers-write.json 2>/dev/null || true
+
+        echo "RustFS init done"
+        rc anonymous get local/board-game-covers
+        rc admin service-account ls local
+
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: boardgame_migrate
+    restart: "no"
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+    networks:
+      - boardgame_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["alembic", "upgrade", "head"]
+  
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: boardgame_backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    networks:
+      - boardgame_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rustfs:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  backend-test:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.test
+    profiles: ["test"]
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+    volumes:
+      - ./backend:/app
+      - /app/.venv
+    networks:
+      - boardgame_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rustfs:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
+volumes:
+  boardgame_pg_data:
+    name: boardgame_pg_data
+  boardgame_rustfs_data:
+    name: boardgame_rustfs_data
+
+networks:
+  boardgame_net:
+    name: boardgame_net
+    driver: bridge
