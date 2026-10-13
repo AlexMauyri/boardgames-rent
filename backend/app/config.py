@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     )
 
     redis_url: str = Field(alias="REDIS_URL")
+    catalog_cache_ttl: int = Field(default=600, alias="CATALOG_CACHE_TTL")
 
     jwt_secret: str = Field(alias="JWT_SECRET")
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
