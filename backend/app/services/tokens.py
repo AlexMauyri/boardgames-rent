@@ -7,6 +7,7 @@ imports live here.
 """
 
 import json
+import logging
 
 import redis.asyncio as redis
 
@@ -19,12 +20,20 @@ from app.auth.jwt import (
 from app.config import settings
 from app.schemas import TokenPair
 
+logger = logging.getLogger(__name__)
+
 _KEY_PREFIX = "refresh:"
+_JTI_PREFIX_LEN = 8
 
 
 def _key(jti: str) -> str:
     """Return the Redis key that stores a refresh token's jti."""
     return f"{_KEY_PREFIX}{jti}"
+
+
+def _prefix(jti: str) -> str:
+    """First characters of a jti, for log output."""
+    return jti[:_JTI_PREFIX_LEN]
 
 
 async def issue_pair(
@@ -51,6 +60,10 @@ async def issue_pair(
         ex=settings.refresh_token_ttl,
     )
 
+    logger.info(
+        "tokens issued user_id=%s role=%s jti_prefix=%s",
+        user_id, role, _prefix(jti),
+    )
     return TokenPair(access_token=access, refresh_token=refresh)
 
 
@@ -80,11 +93,17 @@ async def rotate(
 
     deleted = await redis_client.delete(_key(jti))
     if deleted == 0:
+        logger.warning(
+            "refresh rotation rejected jti_prefix=%s reason=revoked",
+            _prefix(jti),
+        )
         raise InvalidTokenError("revoked")
 
     user_id = int(claims["sub"])
     role = claims["role"]
-    return await issue_pair(redis_client, user_id, role)
+    pair = await issue_pair(redis_client, user_id, role)
+    logger.info("refresh rotated user_id=%s role=%s", user_id, role)
+    return pair
 
 
 async def revoke(
@@ -103,3 +122,4 @@ async def revoke(
     """
     claims = decode_refresh_token(refresh_token)
     await redis_client.delete(_key(claims["jti"]))
+    logger.info("refresh revoked jti_prefix=%s", _prefix(claims["jti"]))

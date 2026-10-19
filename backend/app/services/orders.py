@@ -5,6 +5,7 @@ the dates. Dates only drive the price. This keeps the physical location of
 every box consistent without scheduling logic.
 """
 
+import logging
 from collections import Counter
 from datetime import date
 
@@ -28,11 +29,10 @@ from app.services.exceptions import (
 from app.services.fulfilment import plan_fulfilment
 from app.services.pricing import calculate_price
 
-# Statuses from which a client may still cancel: the boxes have not left a
-# shelf yet, or have already arrived at the pickup point.
+logger = logging.getLogger(__name__)
+
 _CANCELLABLE = ("CREATED", "NEEDS_TRANSFER", "READY_FOR_PICKUP")
 
-# Delivery statuses in which no box has physically moved yet.
 _DELIVERY_NOT_STARTED = ("CREATED", "ACCEPTED")
 
 
@@ -63,24 +63,40 @@ async def create_order(
         NotAvailableError: The games cannot be supplied from current stock.
     """
     if data.start_date < date.today():
+        logger.warning(
+            "order creation rejected client_id=%s start_date=%s reason=past_start_date",
+            client_id, data.start_date,
+        )
         raise ServiceValueError("start_date must not be in the past")
 
     client_row = await client.get(session, client_id)
     if client_row is None:
         raise NotFoundError("Client", client_id)
     if not client_row.is_active:
+        logger.warning(
+            "order creation rejected client_id=%s reason=client_inactive",
+            client_id,
+        )
         raise ForbiddenError("Client account is disabled")
 
     point = await pickup_point.get(session, data.pickup_point_id)
     if point is None:
         raise NotFoundError("PickupPoint", data.pickup_point_id)
     if not point.is_active:
+        logger.warning(
+            "order creation rejected client_id=%s point_id=%s reason=point_inactive",
+            client_id, data.pickup_point_id,
+        )
         raise ServiceValueError("Pickup point is not active")
 
     needed = Counter(data.game_ids)
     games = {g.id: g for g in await board_game.get_many(session, list(needed))}
     for game_id in sorted(needed):
         if game_id not in games:
+            logger.warning(
+                "order creation rejected client_id=%s game_id=%s reason=game_missing",
+                client_id, game_id,
+            )
             raise NotFoundError("BoardGame", game_id)
 
     candidates = await game_copy.list_available_for_games(
@@ -126,6 +142,11 @@ async def create_order(
     detail = await order.get_detail(session, row.id)
     result = OrderDetailRead.model_validate(detail)
     await session.commit()
+    logger.info(
+        "order created order_id=%s client_id=%s box_count=%s total_price=%s status=%s has_delivery=%s",
+        result.id, client_id, len(plan.copies),
+        result.total_price, result.status, transfer,
+    )
     return result
 
 
@@ -200,20 +221,29 @@ async def cancel_order(
         NotFoundError: No such order, or it belongs to another client.
         InvalidTransitionError: The order is in transit or already finished.
     """
-    # Lock order: delivery first, then order, the same as the courier flows,
-    # so concurrent cancel and accept cannot deadlock.
     task = await delivery.get_by_order(session, order_id, for_update=True)
     row = await order.get_for_update(session, order_id)
     if row is None or row.client_id != client_id:
         raise NotFoundError("Order", order_id)
     if row.status not in _CANCELLABLE:
+        logger.warning(
+            "order cancel rejected order_id=%s client_id=%s current_status=%s",
+            order_id, client_id, row.status,
+        )
         raise InvalidTransitionError("Order", order_id, row.status, "cancel")
 
+    old_status = row.status
+    delivery_deleted = False
     if task is not None and task.status in _DELIVERY_NOT_STARTED:
         await session.delete(task)
+        delivery_deleted = True
     row.status = "CANCELLED"
     await session.flush()
 
     result = OrderRead.model_validate(row)
     await session.commit()
+    logger.info(
+        "order cancelled order_id=%s client_id=%s old_status=%s delivery_deleted=%s",
+        order_id, client_id, old_status, delivery_deleted,
+    )
     return result

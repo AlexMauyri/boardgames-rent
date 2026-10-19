@@ -1,10 +1,14 @@
 """Pickup point administration"""
 
+import logging
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud import pickup_point
 from app.schemas import PickupPointCreate, PickupPointRead, PickupPointUpdate
 from app.services.exceptions import ConflictError, NotFoundError
+
+logger = logging.getLogger(__name__)
 
 
 async def list_pickup_points_admin(
@@ -44,11 +48,19 @@ async def create_pickup_point(
     """
     existing = await pickup_point.get_by_name(session, data.name)
     if existing is not None:
+        logger.warning(
+            "pickup point creation rejected name=%s reason=name_taken",
+            data.name,
+        )
         raise ConflictError("PickupPoint", data.name)
 
     obj = await pickup_point.create(session, data=data.model_dump())
     result = PickupPointRead.model_validate(obj)
     await session.commit()
+    logger.info(
+        "pickup point created point_id=%s name=%s",
+        result.id, result.name,
+    )
     return result
 
 
@@ -78,6 +90,10 @@ async def update_pickup_point(
     if data.name is not None and data.name != current.name:
         clash = await pickup_point.get_by_name(session, data.name)
         if clash is not None and clash.id != point_id:
+            logger.warning(
+                "pickup point update rejected point_id=%s name=%s reason=name_taken",
+                point_id, data.name,
+            )
             raise ConflictError("PickupPoint", data.name)
 
     obj = await pickup_point.update(
@@ -87,6 +103,10 @@ async def update_pickup_point(
     )
     result = PickupPointRead.model_validate(obj)
     await session.commit()
+    logger.info(
+        "pickup point updated point_id=%s changed_fields=%s",
+        point_id, sorted(data.model_fields_set),
+    )
     return result
 
 
@@ -111,6 +131,7 @@ async def activate_pickup_point(
         raise NotFoundError("PickupPoint", point_id)
     result = PickupPointRead.model_validate(obj)
     await session.commit()
+    logger.info("pickup point activated point_id=%s", point_id)
     return result
 
 
@@ -135,4 +156,5 @@ async def deactivate_pickup_point(
         raise NotFoundError("PickupPoint", point_id)
     result = PickupPointRead.model_validate(obj)
     await session.commit()
+    logger.info("pickup point deactivated point_id=%s", point_id)
     return result

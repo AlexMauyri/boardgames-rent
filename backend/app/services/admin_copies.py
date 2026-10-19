@@ -1,5 +1,7 @@
 """Physical game box administration"""
 
+import logging
+
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +13,8 @@ from app.schemas import (
     GameCopyUpdate,
 )
 from app.services.exceptions import ConflictError, NotFoundError, ServiceValueError
+
+logger = logging.getLogger(__name__)
 
 _INVENTORY_CONSTRAINT = "uq_game_copies_inventory_number"
 
@@ -39,8 +43,16 @@ async def add_game_copy(
     if point is None:
         raise NotFoundError("PickupPoint", data.current_point_id)
     if not point.is_active:
+        logger.warning(
+            "copy creation rejected point_id=%s reason=point_inactive",
+            data.current_point_id,
+        )
         raise ServiceValueError("Pickup point is not active")
     if await game_copy.get_by_inventory_number(session, data.inventory_number):
+        logger.warning(
+            "copy creation rejected inventory_number=%s reason=inventory_taken",
+            data.inventory_number,
+        )
         raise ConflictError("GameCopy", data.inventory_number)
 
     try:
@@ -56,11 +68,19 @@ async def add_game_copy(
     except IntegrityError as exc:
         await session.rollback()
         if _INVENTORY_CONSTRAINT in str(exc):
+            logger.warning(
+                "copy creation rejected inventory_number=%s reason=inventory_taken",
+                data.inventory_number,
+            )
             raise ConflictError("GameCopy", data.inventory_number) from exc
         raise
 
     result = GameCopyRead.model_validate(obj)
     await session.commit()
+    logger.info(
+        "copy created copy_id=%s game_id=%s point_id=%s inventory_number=%s",
+        result.id, result.game_id, result.current_point_id, result.inventory_number,
+    )
     return result
 
 
@@ -91,15 +111,28 @@ async def update_game_copy(
         raise NotFoundError("GameCopy", copy_id)
 
     number = data.inventory_number
-    if number is not None and number != obj.inventory_number:
+    old_number = obj.inventory_number
+    if number is not None and number != old_number:
         if await game_copy.get_by_inventory_number(session, number):
+            logger.warning(
+                "copy update rejected copy_id=%s inventory_number=%s reason=inventory_taken",
+                copy_id, number,
+            )
             raise ConflictError("GameCopy", number)
         obj.inventory_number = number
         try:
             await session.flush()
         except IntegrityError as exc:
             await session.rollback()
+            logger.warning(
+                "copy update rejected copy_id=%s inventory_number=%s reason=inventory_taken",
+                copy_id, number,
+            )
             raise ConflictError("GameCopy", number) from exc
+        logger.info(
+            "copy inventory changed copy_id=%s old_number=%s new_number=%s",
+            copy_id, old_number, number,
+        )
 
     result = GameCopyRead.model_validate(obj)
     await session.commit()

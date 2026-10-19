@@ -1,5 +1,7 @@
 """Client registration and credential verification."""
 
+import logging
+
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -7,6 +9,8 @@ from app.auth import DUMMY_HASH, hash_password, verify_password
 from app.crud import client, employee
 from app.schemas import ClientCreate, ClientRead, EmployeeRead
 from app.services.exceptions import ConflictError
+
+logger = logging.getLogger(__name__)
 
 
 def _is_client_email_violation(exc: IntegrityError) -> bool:
@@ -51,6 +55,10 @@ async def register_client(
     """
     existing = await client.get_by_email(session, data.email)
     if existing is not None:
+        logger.warning(
+            "client registration rejected email=%s reason=email_taken",
+            data.email,
+        )
         raise ConflictError("Client", data.email)
 
     password_hash = hash_password(data.password)
@@ -64,11 +72,19 @@ async def register_client(
     except IntegrityError as exc:
         await session.rollback()
         if _is_client_email_violation(exc):
+            logger.warning(
+                "client registration rejected email=%s reason=email_taken",
+                data.email,
+            )
             raise ConflictError("Client", data.email) from exc
         raise
 
     result = ClientRead.model_validate(obj)
     await session.commit()
+    logger.info(
+        "client registered client_id=%s email=%s",
+        result.id, data.email,
+    )
     return result
 
 
@@ -92,14 +108,18 @@ async def authenticate_client(
 
     if row is None:
         verify_password(password, DUMMY_HASH)
+        logger.warning("client auth failed email=%s reason=unknown_email", email)
         return None
 
     if not verify_password(password, row.password_hash):
+        logger.warning("client auth failed email=%s reason=bad_password", email)
         return None
 
     if not row.is_active:
+        logger.warning("client auth failed email=%s reason=inactive", email)
         return None
 
+    logger.info("client authenticated client_id=%s", row.id)
     return ClientRead.model_validate(row)
 
 
@@ -123,12 +143,16 @@ async def authenticate_employee(
 
     if row is None:
         verify_password(password, DUMMY_HASH)
+        logger.warning("employee auth failed email=%s reason=unknown_email", email)
         return None
 
     if not verify_password(password, row.password_hash):
+        logger.warning("employee auth failed email=%s reason=bad_password", email)
         return None
 
     if not row.is_active:
+        logger.warning("employee auth failed email=%s reason=inactive", email)
         return None
 
+    logger.info("employee authenticated employee_id=%s role=%s", row.id, row.role)
     return EmployeeRead.model_validate(row)

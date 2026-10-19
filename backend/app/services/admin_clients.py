@@ -1,10 +1,14 @@
 """Client administration."""
 
+import logging
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud import client
 from app.schemas import ClientRead
 from app.services.exceptions import NotFoundError
+
+logger = logging.getLogger(__name__)
 
 
 async def activate_client(
@@ -28,6 +32,7 @@ async def activate_client(
         raise NotFoundError("Client", client_id)
     result = ClientRead.model_validate(obj)
     await session.commit()
+    logger.info("client activated client_id=%s", client_id)
     return result
 
 
@@ -52,4 +57,5 @@ async def deactivate_client(
         raise NotFoundError("Client", client_id)
     result = ClientRead.model_validate(obj)
     await session.commit()
+    logger.info("client deactivated client_id=%s", client_id)
     return result

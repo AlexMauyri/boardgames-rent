@@ -8,11 +8,13 @@ from app.api.errors import register_exception_handlers
 from app.api.v1.router import api_router
 from app.cache.client import bootstrap_redis
 from app.storage.client import bootstrap_storage
+from app.logging_config import setup_logging
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup: verify RustFS and Redis are reachable."""
+    """Startup: verify RustFS and Redis are reachable. Setup logging."""
+    setup_logging()
     await bootstrap_storage(app)
     await bootstrap_redis(app)
     yield

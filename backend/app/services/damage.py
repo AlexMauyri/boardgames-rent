@@ -3,6 +3,7 @@
 Damage found when a client returns a box is recorded by `accept_return`.
 """
 
+import logging
 from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +17,8 @@ from app.services.exceptions import (
     ServiceValueError,
 )
 from app.services.manager import require_manager
+
+logger = logging.getLogger(__name__)
 
 
 async def report_damage(
@@ -45,6 +48,10 @@ async def report_damage(
     """
     manager = await require_manager(session, manager_id)
     if data.order_id is not None or data.deposit_withheld != 0:
+        logger.warning(
+            "damage report rejected manager_id=%s copy_id=%s reason=routine_with_order_or_deposit",
+            manager_id, data.game_copy_id,
+        )
         raise ServiceValueError(
             "A routine report has no order and withholds no deposit; "
             "use accept_return for damage found at return"
@@ -54,12 +61,24 @@ async def report_damage(
     if copy is None:
         raise NotFoundError("GameCopy", data.game_copy_id)
     if copy.current_point_id != manager.pickup_point_id:
+        logger.warning(
+            "damage report rejected manager_id=%s copy_id=%s reason=wrong_point",
+            manager_id, copy.id,
+        )
         raise ForbiddenError("The box is not at your pickup point")
     if copy.status != "AVAILABLE":
+        logger.warning(
+            "damage report rejected copy_id=%s current_status=%s",
+            copy.id, copy.status,
+        )
         raise InvalidTransitionError(
             "GameCopy", copy.id, copy.status, "report damage",
         )
     if await order.busy_copy_ids(session, [copy.id]):
+        logger.warning(
+            "damage report rejected copy_id=%s reason=open_order_holds_box",
+            copy.id,
+        )
         raise InvalidTransitionError(
             "GameCopy", copy.id, copy.status,
             "report damage: an open order holds the box",
@@ -78,6 +97,10 @@ async def report_damage(
 
     result = DamageReportRead.model_validate(report)
     await session.commit()
+    logger.info(
+        "damage reported report_id=%s copy_id=%s manager_id=%s",
+        report.id, copy.id, manager_id,
+    )
     return result
 
 
@@ -108,18 +131,30 @@ async def resolve_damage_report(
     if actor is None:
         raise NotFoundError("Employee", employee_id)
     if not actor.is_active or actor.role not in ("ADMIN", "MANAGER"):
+        logger.warning(
+            "damage report resolve rejected employee_id=%s role=%s reason=role_not_allowed",
+            employee_id, actor.role,
+        )
         raise ForbiddenError("Only an admin or a manager can resolve reports")
 
     report = await damage_report.get_for_update(session, report_id)
     if report is None:
         raise NotFoundError("DamageReport", report_id)
     if report.resolved_at is not None:
+        logger.warning(
+            "damage report resolve rejected report_id=%s reason=already_resolved",
+            report_id,
+        )
         raise InvalidTransitionError(
             "DamageReport", report_id, "RESOLVED", "resolve",
         )
 
     copy = await game_copy.get_for_update(session, report.game_copy_id)
     if actor.role == "MANAGER" and copy.current_point_id != actor.pickup_point_id:
+        logger.warning(
+            "damage report resolve rejected report_id=%s employee_id=%s reason=wrong_point",
+            report_id, employee_id,
+        )
         raise ForbiddenError("The box is not at your pickup point")
 
     report.resolved_at = datetime.now(UTC)
@@ -132,4 +167,8 @@ async def resolve_damage_report(
 
     result = DamageReportRead.model_validate(report)
     await session.commit()
+    logger.info(
+        "damage report resolved report_id=%s copy_id=%s employee_id=%s copy_new_status=%s",
+        report_id, copy.id, employee_id, copy.status,
+    )
     return result

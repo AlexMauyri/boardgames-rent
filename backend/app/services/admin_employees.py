@@ -1,5 +1,7 @@
 """Employee administration."""
 
+import logging
+
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -7,6 +9,8 @@ from app.auth import hash_password
 from app.crud import employee, pickup_point
 from app.schemas import EmployeeCreate, EmployeeRead, EmployeeUpdate
 from app.services.exceptions import ConflictError, NotFoundError, ServiceValueError
+
+logger = logging.getLogger(__name__)
 
 
 def _is_employee_email_violation(exc: IntegrityError) -> bool:
@@ -76,6 +80,10 @@ async def create_employee(
     """
     existing = await employee.get_by_email(session, data.email)
     if existing is not None:
+        logger.warning(
+            "employee creation rejected email=%s reason=email_taken",
+            data.email,
+        )
         raise ConflictError("Employee", data.email)
 
     password_hash = hash_password(data.password)
@@ -89,11 +97,19 @@ async def create_employee(
     except IntegrityError as exc:
         await session.rollback()
         if _is_employee_email_violation(exc):
+            logger.warning(
+                "employee creation rejected email=%s reason=email_taken",
+                data.email,
+            )
             raise ConflictError("Employee", data.email) from exc
         raise
 
     result = EmployeeRead.model_validate(obj)
     await session.commit()
+    logger.info(
+        "employee created employee_id=%s role=%s email=%s",
+        result.id, result.role, data.email,
+    )
     return result
 
 
@@ -123,6 +139,10 @@ async def update_employee(
     try:
         data.validate_against(current)
     except ValueError as exc:
+        logger.warning(
+            "employee update rejected employee_id=%s reason=invalid_role_point_pairing",
+            employee_id,
+        )
         raise ServiceValueError(str(exc)) from exc
 
     obj = await employee.update(
@@ -132,6 +152,10 @@ async def update_employee(
     )
     result = EmployeeRead.model_validate(obj)
     await session.commit()
+    logger.info(
+        "employee updated employee_id=%s changed_fields=%s",
+        employee_id, sorted(data.model_fields_set),
+    )
     return result
 
 
@@ -162,12 +186,20 @@ async def assign_manager_to_point(
         raise NotFoundError("Employee", employee_id)
 
     if emp.role != "MANAGER":
+        logger.warning(
+            "manager assignment rejected employee_id=%s role=%s reason=not_manager",
+            employee_id, emp.role,
+        )
         raise ServiceValueError(
             f"Employee {employee_id} has role {emp.role!r}; "
             "only MANAGER employees can be assigned a pickup point."
         )
 
     if pickup_point_id is None:
+        logger.warning(
+            "manager assignment rejected employee_id=%s reason=missing_point_id",
+            employee_id,
+        )
         raise ServiceValueError(
             "Cannot clear pickup_point_id on a MANAGER; "
             "use change_employee_role to change the role first."
@@ -182,6 +214,10 @@ async def assign_manager_to_point(
 
     result = EmployeeRead.model_validate(emp)
     await session.commit()
+    logger.info(
+        "manager assigned employee_id=%s point_id=%s",
+        employee_id, pickup_point_id,
+    )
     return result
 
 
@@ -211,10 +247,15 @@ async def change_employee_role(
     if emp is None:
         raise NotFoundError("Employee", employee_id)
 
+    old_role = emp.role
     payload = EmployeeUpdate(role=new_role, pickup_point_id=pickup_point_id)
     try:
         payload.validate_against(emp)
     except ValueError as exc:
+        logger.warning(
+            "employee role change rejected employee_id=%s new_role=%s reason=invalid_role_point_pairing",
+            employee_id, new_role,
+        )
         raise ServiceValueError(str(exc)) from exc
 
     obj = await employee.update(
@@ -224,4 +265,8 @@ async def change_employee_role(
     )
     result = EmployeeRead.model_validate(obj)
     await session.commit()
+    logger.info(
+        "employee role changed employee_id=%s old_role=%s new_role=%s point_id=%s",
+        employee_id, old_role, new_role, pickup_point_id,
+    )
     return result

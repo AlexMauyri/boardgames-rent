@@ -141,8 +141,6 @@ async def search_available_games(
     if not point.is_active:
         raise ServiceValueError("Pickup point is not active")
 
-    # The stock filter is applied after the SQL filters, so paging happens
-    # here and not in the query; the catalog is small.
     games = await board_game.list_filtered(
         session,
         players=players,

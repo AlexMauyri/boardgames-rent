@@ -5,6 +5,7 @@ boxes over through the delivery flow, so the manager's own handovers are the
 two ends of a rental: issuing a box to the client and accepting it back.
 """
 
+import logging
 from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,6 +28,8 @@ from app.services.exceptions import (
     ServiceValueError,
 )
 
+logger = logging.getLogger(__name__)
+
 
 async def require_manager(session: AsyncSession, manager_id: int) -> Employee:
     """Load an employee and ensure they are an active, assigned manager.
@@ -46,6 +49,10 @@ async def require_manager(session: AsyncSession, manager_id: int) -> Employee:
     if row is None:
         raise NotFoundError("Employee", manager_id)
     if row.role != "MANAGER" or not row.is_active:
+        logger.warning(
+            "manager check failed employee_id=%s role=%s is_active=%s",
+            manager_id, row.role, row.is_active,
+        )
         raise ForbiddenError("Only an active manager can do this")
     return row
 
@@ -162,6 +169,10 @@ async def issue_order(
     if row is None or row.pickup_point_id != manager.pickup_point_id:
         raise NotFoundError("Order", order_id)
     if row.status != "READY_FOR_PICKUP":
+        logger.warning(
+            "order issue rejected order_id=%s manager_id=%s current_status=%s",
+            order_id, manager_id, row.status,
+        )
         raise InvalidTransitionError("Order", order_id, row.status, "issue")
 
     copies = await game_copy.list_for_order(session, order_id, lock=True)
@@ -171,6 +182,10 @@ async def issue_order(
         or c.current_point_id != manager.pickup_point_id
     ]
     if missing:
+        logger.warning(
+            "order issue rejected order_id=%s manager_id=%s reason=box_not_at_point",
+            order_id, manager_id,
+        )
         raise InvalidTransitionError(
             "Order", order_id, row.status,
             "issue: a box is not at the pickup point",
@@ -184,6 +199,10 @@ async def issue_order(
 
     result = OrderRead.model_validate(row)
     await session.commit()
+    logger.info(
+        "order issued order_id=%s manager_id=%s box_count=%s",
+        order_id, manager_id, len(copies),
+    )
     return result
 
 
@@ -221,10 +240,18 @@ async def accept_return(
     if row is None:
         raise NotFoundError("Order", order_id)
     if row.status != "ACTIVE":
+        logger.warning(
+            "order return rejected order_id=%s manager_id=%s current_status=%s",
+            order_id, manager_id, row.status,
+        )
         raise InvalidTransitionError("Order", order_id, row.status, "return")
 
     copies = await game_copy.list_for_order(session, order_id, lock=True)
     if any(c.status != "WITH_CLIENT" for c in copies):
+        logger.warning(
+            "order return rejected order_id=%s manager_id=%s reason=box_not_with_client",
+            order_id, manager_id,
+        )
         raise InvalidTransitionError(
             "Order", order_id, row.status, "return: a box is not with the client",
         )
@@ -232,11 +259,19 @@ async def accept_return(
     order_copy_ids = {c.id for c in copies}
     for damage in data.damages:
         if damage.game_copy_id not in order_copy_ids:
+            logger.warning(
+                "order return rejected order_id=%s manager_id=%s copy_id=%s reason=box_not_in_order",
+                order_id, manager_id, damage.game_copy_id,
+            )
             raise ServiceValueError(
                 f"Box {damage.game_copy_id} is not part of order {order_id}"
             )
     withheld = sum((d.deposit_withheld for d in data.damages), Decimal("0"))
     if withheld > row.deposit_paid:
+        logger.warning(
+            "order return rejected order_id=%s manager_id=%s withheld=%s deposit_paid=%s reason=withheld_exceeds_deposit",
+            order_id, manager_id, withheld, row.deposit_paid,
+        )
         raise ServiceValueError("Amount withheld exceeds the deposit paid")
 
     damaged_ids = {d.game_copy_id for d in data.damages}
@@ -268,4 +303,9 @@ async def accept_return(
         deposit_refund=row.deposit_paid - withheld,
     )
     await session.commit()
+    logger.info(
+        "order returned order_id=%s manager_id=%s box_count=%s damaged_count=%s deposit_withheld=%s deposit_refund=%s",
+        order_id, manager_id, len(copies), len(data.damages),
+        withheld, result.deposit_refund,
+    )
     return result

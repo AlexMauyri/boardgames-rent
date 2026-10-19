@@ -1,10 +1,14 @@
 """Category administration — write paths."""
 
+import logging
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud import category
 from app.schemas import CategoryCreate, CategoryRead, CategoryUpdate
 from app.services.exceptions import ConflictError, NotFoundError
+
+logger = logging.getLogger(__name__)
 
 
 async def create_category(session: AsyncSession, data: CategoryCreate) -> CategoryRead:
@@ -22,11 +26,16 @@ async def create_category(session: AsyncSession, data: CategoryCreate) -> Catego
     """
     existing = await category.get_by_name(session, data.name)
     if existing is not None:
+        logger.warning(
+            "category creation rejected name=%s reason=name_taken",
+            data.name,
+        )
         raise ConflictError("Category", data.name)
 
     obj = await category.create(session, data=data.model_dump())
     result = CategoryRead.model_validate(obj)
     await session.commit()
+    logger.info("category created category_id=%s name=%s", result.id, result.name)
     return result
 
 
@@ -56,6 +65,10 @@ async def update_category(
     if data.name is not None and data.name != current.name:
         clash = await category.get_by_name(session, data.name)
         if clash is not None and clash.id != category_id:
+            logger.warning(
+                "category update rejected category_id=%s name=%s reason=name_taken",
+                category_id, data.name,
+            )
             raise ConflictError("Category", data.name)
 
     obj = await category.update(
@@ -65,6 +78,10 @@ async def update_category(
     )
     result = CategoryRead.model_validate(obj)
     await session.commit()
+    logger.info(
+        "category updated category_id=%s changed_fields=%s",
+        category_id, sorted(data.model_fields_set),
+    )
     return result
 
 
@@ -78,7 +95,13 @@ async def delete_category(session: AsyncSession, category_id: int) -> None:
     Raises:
         NotFoundError: No category with that id.
     """
+    current = await category.get(session, category_id)
+    if current is None:
+        raise NotFoundError("Category", category_id)
+    name = current.name
+
     deleted = await category.delete(session, id=category_id)
     if not deleted:
         raise NotFoundError("Category", category_id)
     await session.commit()
+    logger.info("category deleted category_id=%s name=%s", category_id, name)

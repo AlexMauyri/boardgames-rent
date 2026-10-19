@@ -11,6 +11,7 @@ Only the boxes that are at the departure point travel; boxes of the same
 order already at the destination stay on their shelf.
 """
 
+import logging
 from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +24,8 @@ from app.services.exceptions import (
     InvalidTransitionError,
     NotFoundError,
 )
+
+logger = logging.getLogger(__name__)
 
 
 async def list_open_deliveries(
@@ -80,6 +83,10 @@ async def _require_courier(session: AsyncSession, courier_id: int) -> None:
     if row is None:
         raise NotFoundError("Employee", courier_id)
     if row.role != "COURIER" or not row.is_active:
+        logger.warning(
+            "courier check failed employee_id=%s role=%s is_active=%s",
+            courier_id, row.role, row.is_active,
+        )
         raise ForbiddenError("Only an active courier can work on deliveries")
 
 
@@ -99,6 +106,10 @@ async def _lock_own(
     if row is None:
         raise NotFoundError("Delivery", delivery_id)
     if row.courier_id != courier_id:
+        logger.warning(
+            "delivery access denied delivery_id=%s courier_id=%s actual_courier_id=%s",
+            delivery_id, courier_id, row.courier_id,
+        )
         raise ForbiddenError("Delivery is not assigned to this courier")
     return row
 
@@ -128,6 +139,10 @@ async def accept_delivery(
     if row is None:
         raise NotFoundError("Delivery", delivery_id)
     if row.status != "CREATED" or row.courier_id is not None:
+        logger.warning(
+            "delivery accept rejected delivery_id=%s current_status=%s",
+            delivery_id, row.status,
+        )
         raise InvalidTransitionError(
             "Delivery", delivery_id, row.status, "accept",
         )
@@ -138,6 +153,10 @@ async def accept_delivery(
 
     result = DeliveryRead.model_validate(row)
     await session.commit()
+    logger.info(
+        "delivery accepted delivery_id=%s courier_id=%s order_id=%s",
+        delivery_id, courier_id, row.order_id,
+    )
     return result
 
 
@@ -164,6 +183,10 @@ async def start_delivery(
     """
     row = await _lock_own(session, delivery_id, courier_id)
     if row.status != "ACCEPTED":
+        logger.warning(
+            "delivery start rejected delivery_id=%s current_status=%s",
+            delivery_id, row.status,
+        )
         raise InvalidTransitionError(
             "Delivery", delivery_id, row.status, "start",
         )
@@ -175,6 +198,10 @@ async def start_delivery(
         if c.status == "AVAILABLE" and c.current_point_id == row.from_point_id
     ]
     if not moving:
+        logger.warning(
+            "delivery start rejected delivery_id=%s reason=no_boxes_at_source",
+            delivery_id,
+        )
         raise InvalidTransitionError(
             "Delivery", delivery_id, row.status,
             "start: no box at the departure point",
@@ -189,6 +216,10 @@ async def start_delivery(
 
     result = DeliveryRead.model_validate(row)
     await session.commit()
+    logger.info(
+        "delivery started delivery_id=%s courier_id=%s order_id=%s boxes_moved=%s",
+        delivery_id, courier_id, row.order_id, len(moving),
+    )
     return result
 
 
@@ -216,16 +247,22 @@ async def complete_delivery(
     """
     row = await _lock_own(session, delivery_id, courier_id)
     if row.status != "IN_TRANSIT":
+        logger.warning(
+            "delivery complete rejected delivery_id=%s current_status=%s",
+            delivery_id, row.status,
+        )
         raise InvalidTransitionError(
             "Delivery", delivery_id, row.status, "complete",
         )
 
     parent = await order.get_for_update(session, row.order_id)
     copies = await game_copy.list_for_order(session, row.order_id, lock=True)
+    delivered = 0
     for copy in copies:
         if copy.status == "IN_TRANSIT":
             copy.status = "AVAILABLE"
             copy.current_point_id = row.to_point_id
+            delivered += 1
     row.status = "DELIVERED"
     row.delivered_at = datetime.now(UTC)
     parent.status = "READY_FOR_PICKUP"
@@ -233,4 +270,8 @@ async def complete_delivery(
 
     result = DeliveryRead.model_validate(row)
     await session.commit()
+    logger.info(
+        "delivery completed delivery_id=%s courier_id=%s order_id=%s to_point_id=%s boxes_delivered=%s",
+        delivery_id, courier_id, row.order_id, row.to_point_id, delivered,
+    )
     return result

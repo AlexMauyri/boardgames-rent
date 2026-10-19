@@ -80,6 +80,10 @@ async def upload_cover(
 
     content_type = file.content_type or ""
     if content_type not in settings.upload_allowed_mime_types:
+        logger.warning(
+            "cover upload rejected game_id=%s content_type=%s reason=mime_not_allowed",
+            game_id, content_type,
+        )
         raise ServiceValueError(
             f"Unsupported content type {content_type!r}; "
             f"allowed: {settings.upload_allowed_mime_types}"
@@ -87,6 +91,10 @@ async def upload_cover(
 
     data = await file.read()
     if len(data) > settings.upload_max_bytes:
+        logger.warning(
+            "cover upload rejected game_id=%s size=%s limit=%s reason=too_large",
+            game_id, len(data), settings.upload_max_bytes,
+        )
         raise ServiceValueError(
             f"File too large: {len(data)} bytes > {settings.upload_max_bytes}"
         )
@@ -100,11 +108,18 @@ async def upload_cover(
         try:
             await _remove_object(s3, old_key)
         except Exception:
-            logger.warning("Failed to remove old cover %s", old_key, exc_info=True)
+            logger.warning(
+                "old cover removal failed game_id=%s old_key=%s",
+                game_id, old_key, exc_info=True,
+            )
 
     game.cover_key = new_key
     await session.commit()
 
+    logger.info(
+        "cover uploaded game_id=%s key=%s size=%s content_type=%s",
+        game_id, new_key, len(data), content_type,
+    )
     return CoverUploadResponse(cover_key=new_key, cover_url=_public_url(new_key))
 
 
@@ -136,3 +151,4 @@ async def delete_cover(
     await _remove_object(s3, key)
     game.cover_key = None
     await session.commit()
+    logger.info("cover deleted game_id=%s key=%s", game_id, key)

@@ -11,6 +11,7 @@ Admin write paths call `invalidate_catalog` after the change is committed.
 
 import hashlib
 import json
+import logging
 from collections.abc import Awaitable, Callable
 
 import redis.asyncio as redis
@@ -20,6 +21,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.schemas import BoardGameRead, CategoryRead, PickupPointRead
 from app.services import catalog
+
+logger = logging.getLogger(__name__)
 
 _PREFIX = "catalog"
 _CATEGORIES = f"{_PREFIX}:categories"
@@ -45,7 +48,6 @@ def _to_cached(game: BoardGameRead) -> _CachedGame:
 
 
 def _to_public(game: _CachedGame) -> BoardGameRead:
-    # model_validate would return the subclass instance unchanged.
     return BoardGameRead.model_validate(game.model_dump())
 
 
@@ -71,6 +73,8 @@ async def _cached[T](
     hit = await redis_client.get(key)
     if hit is not None:
         return adapter.validate_json(hit)
+
+    logger.debug("cache miss key=%s", key)
 
     value = await load()
     await redis_client.set(
@@ -203,3 +207,9 @@ async def invalidate_catalog(
         await _drop_prefix(redis_client, _GAMES)
     if points:
         await _drop_prefix(redis_client, _POINTS)
+
+    if categories or games or points:
+        logger.info(
+            "catalog cache invalidated categories=%s games=%s points=%s",
+            categories, games, points,
+        )
