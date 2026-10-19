@@ -1,0 +1,13 @@
+[
+  {"role": "ADMIN", "email": "admin@bgrent.io", "password": "demo-password", "full_name": "Админ Анна", "phone": "+7 900 111-00-01", "pickup_point": null},
+  {"role": "COURIER", "email": "courier.oleg@bgrent.io", "password": "demo-password", "full_name": "Курьер Олег", "phone": "+7 900 111-00-02"},
+  {"role": "COURIER", "email": "courier.daria@bgrent.io", "password": "demo-password", "full_name": "Курьер Дарья", "phone": "+7 900 111-00-03"},
+  {"role": "COURIER", "email": "courier.mikhail@bgrent.io", "password": "demo-password", "full_name": "Курьер Михаил", "phone": "+7 900 111-00-04"},
+  {"role": "COURIER", "email": "courier.olga@bgrent.io", "password": "demo-password", "full_name": "Курьер Ольга", "phone": "+7 900 111-00-05"},
+  {"role": "MANAGER", "email": "manager.center@bgrent.io", "password": "demo-password", "full_name": "Менеджер Центр", "phone": "+7 900 111-01-01", "pickup_point": "Центр"},
+  {"role": "MANAGER", "email": "manager.north@bgrent.io", "password": "demo-password", "full_name": "Менеджер Север", "phone": "+7 900 111-01-02", "pickup_point": "Север"},
+  {"role": "MANAGER", "email": "manager.south@bgrent.io", "password": "demo-password", "full_name": "Менеджер Юг", "phone": "+7 900 111-01-03", "pickup_point": "Юг"},
+  {"role": "MANAGER", "email": "manager.avrora@bgrent.io", "password": "demo-password", "full_name": "Менеджер Аврора", "phone": "+7 900 111-01-04", "pickup_point": "Аврора"},
+  {"role": "MANAGER", "email": "manager.volga@bgrent.io", "password": "demo-password", "full_name": "Менеджер Волга", "phone": "+7 900 111-01-05", "pickup_point": "Волга"},
+  {"role": "MANAGER", "email": "manager.pobeda@bgrent.io", "password": "demo-password", "full_name": "Менеджер Победа", "phone": "+7 900 111-01-06", "pickup_point": "Победа"}
+]

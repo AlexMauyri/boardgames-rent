@@ -1,0 +1,12 @@
+[
+  {"name": "Центр", "address": "ул. Ленина, 10", "phone": "+7 900 000-00-01", "is_active": true},
+  {"name": "Север", "address": "пр. Мира, 45", "phone": "+7 900 000-00-02", "is_active": true},
+  {"name": "Юг", "address": "ул. Садовая, 7", "phone": "+7 900 000-00-03", "is_active": true},
+  {"name": "Запад", "address": "ул. Кирова, 3", "phone": "+7 900 000-00-04", "is_active": false},
+  {"name": "Самарская площадь", "address": "пл. Самарская, 1", "phone": "+7 900 000-00-05", "is_active": true},
+  {"name": "Железнодорожный", "address": "ул. Ленинградская, 15", "phone": "+7 900 000-00-06", "is_active": true},
+  {"name": "Аврора", "address": "ул. Авроры, 120", "phone": "+7 900 000-00-07", "is_active": true},
+  {"name": "Волга", "address": "Волжский проспект, 30", "phone": "+7 900 000-00-08", "is_active": true},
+  {"name": "Победа", "address": "ул. Победы, 88", "phone": "+7 900 000-00-09", "is_active": true},
+  {"name": "Октябрьский", "address": "ул. Осипенко, 22", "phone": "+7 900 000-00-10", "is_active": true}
+]
