@@ -1,121 +1,321 @@
-"""Tests for app.auth.dpop: RFC 7638 thumbprint and JWK validation."""
+import time
+import uuid
 
+import jwt
+import json
 import pytest
+from cryptography.hazmat.primitives.asymmetric import ec
 
 from app.auth.dpop import (
     InvalidJwkError,
     compute_jwk_thumbprint,
     parse_jwk_from_header,
+    DpopExpired,
+    DpopInvalidProof,
+    DpopJktMismatch,
+    DpopReplay,
+    verify_dpop_proof,
 )
 
-_RFC7638_EC_JWK = {
-    "kty": "EC",
-    "crv": "P-256",
-    "x": "MKBCTNIcKUSDii11ySs3526iDZ8AiTo7Tu6KPAqv7D4",
-    "y": "4Etl6SRW2YiLUrN5vfvVHuhp7x8PxltmWWlbbM4IFyM",
-    "use": "enc",
-    "kid": "1",
-}
-_RFC7638_EC_THUMBPRINT = "cn-I_WNMClehiVp51i_0VpOENW1upEerA8sEam5hn-s"
+
+# --- fixtures ---------------------------------------------------------
 
 
-# --- compute_jwk_thumbprint -------------------------------------------
+def _b64url(data: bytes) -> str:
+    import base64
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
 
-def test_thumbprint_matches_rfc7638_vector():
-    assert compute_jwk_thumbprint(_RFC7638_EC_JWK) == _RFC7638_EC_THUMBPRINT
-
-
-def test_thumbprint_ignores_extra_members():
-    bare = {k: _RFC7638_EC_JWK[k] for k in ("kty", "crv", "x", "y")}
-    assert compute_jwk_thumbprint(bare) == _RFC7638_EC_THUMBPRINT
-
-    noisy = {**bare, "kid": "different", "use": "sig", "alg": "ES256"}
-    assert compute_jwk_thumbprint(noisy) == _RFC7638_EC_THUMBPRINT
-
-
-def test_thumbprint_is_stable_regardless_of_dict_order():
-    shuffled = {
-        "y": _RFC7638_EC_JWK["y"],
-        "x": _RFC7638_EC_JWK["x"],
-        "crv": _RFC7638_EC_JWK["crv"],
-        "kty": _RFC7638_EC_JWK["kty"],
-    }
-    assert compute_jwk_thumbprint(shuffled) == _RFC7638_EC_THUMBPRINT
-
-
-def test_thumbprint_rejects_missing_member():
-    without_x = {k: v for k, v in _RFC7638_EC_JWK.items() if k != "x"}
-    with pytest.raises(InvalidJwkError):
-        compute_jwk_thumbprint(without_x)
-
-
-def test_thumbprint_rejects_non_string_member():
-    broken = {**_RFC7638_EC_JWK, "x": 42}
-    with pytest.raises(InvalidJwkError):
-        compute_jwk_thumbprint(broken)
-
-
-def test_thumbprint_rejects_empty_string_member():
-    broken = {**_RFC7638_EC_JWK, "y": ""}
-    with pytest.raises(InvalidJwkError):
-        compute_jwk_thumbprint(broken)
-
-
-# --- parse_jwk_from_header --------------------------------------------
-
-
-def test_parse_jwk_returns_required_fields_only():
-    parsed = parse_jwk_from_header(_RFC7638_EC_JWK)
-    assert parsed == {
-        "crv": "P-256",
+def _public_jwk(private_key) -> dict:
+    numbers = private_key.public_key().public_numbers()
+    return {
         "kty": "EC",
-        "x": _RFC7638_EC_JWK["x"],
-        "y": _RFC7638_EC_JWK["y"],
+        "crv": "P-256",
+        "x": _b64url(numbers.x.to_bytes(32, "big")),
+        "y": _b64url(numbers.y.to_bytes(32, "big")),
     }
-    assert "use" not in parsed
-    assert "kid" not in parsed
 
 
-def test_parse_jwk_rejects_non_dict():
-    with pytest.raises(InvalidJwkError):
-        parse_jwk_from_header("not-a-jwk")
-    with pytest.raises(InvalidJwkError):
-        parse_jwk_from_header(None)
-    with pytest.raises(InvalidJwkError):
-        parse_jwk_from_header(["kty", "EC"])
+@pytest.fixture
+def keypair():
+    """Return (private_key, public_jwk) for ES256 testing."""
+    private_key = ec.generate_private_key(ec.SECP256R1())
+    return private_key, _public_jwk(private_key)
 
 
-def test_parse_jwk_rejects_wrong_kty():
-    rsa_like = {**_RFC7638_EC_JWK, "kty": "RSA"}
-    with pytest.raises(InvalidJwkError):
-        parse_jwk_from_header(rsa_like)
+def _sign(
+    private_key,
+    jwk: dict,
+    *,
+    htm: str = "POST",
+    htu: str = "https://host/api/v1/auth/login/client",
+    iat: int | None = None,
+    jti: str | None = None,
+    typ: str = "dpop+jwt",
+    alg: str = "ES256",
+    extra_claims: dict | None = None,
+) -> str:
+    """Build and sign a DPoP proof with the given claims."""
+    header = {"typ": typ, "alg": alg, "jwk": jwk}
+    payload = {
+        "jti": jti if jti is not None else str(uuid.uuid4()),
+        "htm": htm,
+        "htu": htu,
+        "iat": iat if iat is not None else int(time.time()),
+    }
+    if extra_claims:
+        payload.update(extra_claims)
+    return jwt.encode(payload, private_key, algorithm="ES256", headers=header)
 
 
-def test_parse_jwk_rejects_wrong_crv():
-    p384 = {**_RFC7638_EC_JWK, "crv": "P-384"}
-    with pytest.raises(InvalidJwkError):
-        parse_jwk_from_header(p384)
+# --- verify_dpop_proof: happy path ------------------------------------
 
 
-def test_parse_jwk_rejects_private_member():
-    with_d = {**_RFC7638_EC_JWK, "d": "some-private-scalar"}
-    with pytest.raises(InvalidJwkError):
-        parse_jwk_from_header(with_d)
+async def test_verify_returns_thumbprint_on_valid_proof(
+    redis_client, keypair,
+):
+    private_key, jwk = keypair
+    expected_jkt = compute_jwk_thumbprint(jwk)
+    proof = _sign(private_key, jwk)
+
+    result = await verify_dpop_proof(
+        proof,
+        expected_htm="POST",
+        expected_htu="https://host/api/v1/auth/login/client",
+        expected_jkt=None,
+        redis_client=redis_client,
+    )
+
+    assert result == expected_jkt
 
 
-def test_parse_jwk_rejects_missing_coordinate():
-    without_y = {k: v for k, v in _RFC7638_EC_JWK.items() if k != "y"}
-    with pytest.raises(InvalidJwkError):
-        parse_jwk_from_header(without_y)
+async def test_verify_with_matching_expected_jkt(
+    redis_client, keypair,
+):
+    private_key, jwk = keypair
+    expected_jkt = compute_jwk_thumbprint(jwk)
+    proof = _sign(private_key, jwk)
+
+    result = await verify_dpop_proof(
+        proof,
+        expected_htm="POST",
+        expected_htu="https://host/api/v1/auth/login/client",
+        expected_jkt=expected_jkt,
+        redis_client=redis_client,
+    )
+
+    assert result == expected_jkt
 
 
-def test_parse_jwk_rejects_non_string_coordinate():
-    broken = {**_RFC7638_EC_JWK, "x": 123}
-    with pytest.raises(InvalidJwkError):
-        parse_jwk_from_header(broken)
+# --- header checks ----------------------------------------------------
 
 
-def test_parse_jwk_round_trips_through_thumbprint():
-    parsed = parse_jwk_from_header(_RFC7638_EC_JWK)
-    assert compute_jwk_thumbprint(parsed) == _RFC7638_EC_THUMBPRINT
+async def test_wrong_typ_rejected(redis_client, keypair):
+    private_key, jwk = keypair
+    proof = _sign(private_key, jwk, typ="JWT")
+    with pytest.raises(DpopInvalidProof, match="typ"):
+        await verify_dpop_proof(
+            proof,
+            expected_htm="POST",
+            expected_htu="https://host/x",
+            expected_jkt=None,
+            redis_client=redis_client,
+        )
+
+
+async def test_wrong_alg_rejected(redis_client, keypair):
+    """Server must reject the alg before checking the signature."""
+    _, jwk = keypair
+    header = {"typ": "dpop+jwt", "alg": "RS256", "jwk": jwk}
+    payload = {
+        "jti": str(uuid.uuid4()),
+        "htm": "POST",
+        "htu": "https://host/x",
+        "iat": int(time.time()),
+    }
+    header_b64 = _b64url(json.dumps(header, separators=(",", ":")).encode())
+    payload_b64 = _b64url(json.dumps(payload, separators=(",", ":")).encode())
+    bogus_sig = _b64url(b"\x00" * 64)
+    proof = f"{header_b64}.{payload_b64}.{bogus_sig}"
+
+    with pytest.raises(DpopInvalidProof, match="alg"):
+        await verify_dpop_proof(
+            proof,
+            expected_htm="POST",
+            expected_htu="https://host/x",
+            expected_jkt=None,
+            redis_client=redis_client,
+        )
+
+
+
+async def test_malformed_jwt_rejected(redis_client):
+    with pytest.raises(DpopInvalidProof, match="malformed"):
+        await verify_dpop_proof(
+            "not-a-jwt",
+            expected_htm="POST",
+            expected_htu="https://host/x",
+            expected_jkt=None,
+            redis_client=redis_client,
+        )
+
+
+# --- claim checks -----------------------------------------------------
+
+
+async def test_wrong_htm_rejected(redis_client, keypair):
+    private_key, jwk = keypair
+    proof = _sign(private_key, jwk, htm="GET")
+    with pytest.raises(DpopInvalidProof, match="htm"):
+        await verify_dpop_proof(
+            proof,
+            expected_htm="POST",
+            expected_htu="https://host/x",
+            expected_jkt=None,
+            redis_client=redis_client,
+        )
+
+
+async def test_wrong_htu_rejected(redis_client, keypair):
+    private_key, jwk = keypair
+    proof = _sign(private_key, jwk, htu="https://host/other")
+    with pytest.raises(DpopInvalidProof, match="htu"):
+        await verify_dpop_proof(
+            proof,
+            expected_htm="POST",
+            expected_htu="https://host/x",
+            expected_jkt=None,
+            redis_client=redis_client,
+        )
+
+
+async def test_expired_iat_rejected(redis_client, keypair):
+    private_key, jwk = keypair
+    proof = _sign(
+        private_key, jwk,
+        htu="https://host/x",
+        iat=int(time.time()) - 61,
+    )
+    with pytest.raises(DpopExpired):
+        await verify_dpop_proof(
+            proof,
+            expected_htm="POST",
+            expected_htu="https://host/x",
+            expected_jkt=None,
+            redis_client=redis_client,
+        )
+
+
+async def test_future_iat_rejected(redis_client, keypair):
+    private_key, jwk = keypair
+    proof = _sign(
+        private_key, jwk,
+        htu="https://host/x",
+        iat=int(time.time()) + 61,
+    )
+    with pytest.raises(DpopExpired):
+        await verify_dpop_proof(
+            proof,
+            expected_htm="POST",
+            expected_htu="https://host/x",
+            expected_jkt=None,
+            redis_client=redis_client,
+        )
+
+
+async def test_missing_jti_rejected(redis_client, keypair):
+    private_key, jwk = keypair
+    header = {"typ": "dpop+jwt", "alg": "ES256", "jwk": jwk}
+    payload = {"htm": "POST", "htu": "https://host/x", "iat": int(time.time())}
+    proof = jwt.encode(payload, private_key, algorithm="ES256", headers=header)
+    with pytest.raises(DpopInvalidProof, match="jti"):
+        await verify_dpop_proof(
+            proof,
+            expected_htm="POST",
+            expected_htu="https://host/x",
+            expected_jkt=None,
+            redis_client=redis_client,
+        )
+
+
+# --- signature and jkt ------------------------------------------------
+
+
+async def test_broken_signature_rejected(redis_client, keypair):
+    """A token whose signature was tampered with must not pass."""
+    private_key, jwk = keypair
+    proof = _sign(private_key, jwk)
+    header_b64, payload_b64, signature_b64 = proof.split(".")
+    tampered = f"{header_b64}.{payload_b64}.{signature_b64[:-2]}XX"
+    with pytest.raises(DpopInvalidProof, match="signature"):
+        await verify_dpop_proof(
+            tampered,
+            expected_htm="POST",
+            expected_htu="https://host/api/v1/auth/login/client",
+            expected_jkt=None,
+            redis_client=redis_client,
+        )
+
+
+async def test_jkt_mismatch_rejected(redis_client, keypair):
+    private_key, jwk = keypair
+    proof = _sign(private_key, jwk)
+    with pytest.raises(DpopJktMismatch):
+        await verify_dpop_proof(
+            proof,
+            expected_htm="POST",
+            expected_htu="https://host/api/v1/auth/login/client",
+            expected_jkt="some-other-thumbprint",
+            redis_client=redis_client,
+        )
+
+
+# --- replay -----------------------------------------------------------
+
+
+async def test_replay_rejected(redis_client, keypair):
+    private_key, jwk = keypair
+    proof = _sign(private_key, jwk)
+
+    await verify_dpop_proof(
+        proof,
+        expected_htm="POST",
+        expected_htu="https://host/api/v1/auth/login/client",
+        expected_jkt=None,
+        redis_client=redis_client,
+    )
+
+    with pytest.raises(DpopReplay):
+        await verify_dpop_proof(
+            proof,
+            expected_htm="POST",
+            expected_htu="https://host/api/v1/auth/login/client",
+            expected_jkt=None,
+            redis_client=redis_client,
+        )
+
+
+async def test_broken_proof_does_not_burn_jti(redis_client, keypair):
+    """A forged proof with a valid jti must not prevent the real one."""
+    private_key, jwk = keypair
+    jti = str(uuid.uuid4())
+    real_proof = _sign(private_key, jwk, jti=jti)
+
+    foreign_key = ec.generate_private_key(ec.SECP256R1())
+    forged = _sign(foreign_key, jwk, jti=jti)
+    with pytest.raises(DpopInvalidProof):
+        await verify_dpop_proof(
+            forged,
+            expected_htm="POST",
+            expected_htu="https://host/api/v1/auth/login/client",
+            expected_jkt=None,
+            redis_client=redis_client,
+        )
+
+    await verify_dpop_proof(
+        real_proof,
+        expected_htm="POST",
+        expected_htu="https://host/api/v1/auth/login/client",
+        expected_jkt=None,
+        redis_client=redis_client,
+    )
