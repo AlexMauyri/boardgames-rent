@@ -102,9 +102,14 @@ def test_login_request_rejects_empty_password():
         LoginRequest(email="alice@test.io", password="")
 
 
-def test_token_pair_defaults_to_bearer():
+def test_token_pair_defaults_to_dpop():
     pair = TokenPair(access_token="a", refresh_token="r")
-    assert pair.token_type == "bearer"
+    assert pair.token_type == "DPoP"
+
+
+def test_token_pair_rejects_bearer():
+    with pytest.raises(ValidationError):
+        TokenPair(access_token="a", refresh_token="r", token_type="bearer")
 
 
 def test_token_pair_rejects_unknown_token_type():

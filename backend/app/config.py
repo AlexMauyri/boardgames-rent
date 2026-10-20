@@ -47,6 +47,16 @@ class Settings(BaseSettings):
         alias="REFRESH_TOKEN_TTL",
     )
 
+    dpop_iat_window_seconds: int = Field(
+        default=60, alias="DPOP_IAT_WINDOW_SECONDS",
+    )
+    dpop_jti_ttl_seconds: int = Field(
+        default=300, alias="DPOP_JTI_TTL_SECONDS",
+    )
+    dpop_require_nonce: bool = Field(
+        default=True, alias="DPOP_REQUIRE_NONCE",
+    )
+
     @property
     def database_url(self) -> str:
         """Async asyncpg DSN, assembled from discrete POSTGRES_* vars."""

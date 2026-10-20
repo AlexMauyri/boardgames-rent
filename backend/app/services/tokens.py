@@ -1,10 +1,4 @@
-"""Refresh-token service backed by Redis.
-
-Access tokens are stateless; refresh tokens are valid only while their
-``jti`` is registered in Redis. Logout and rotation both delete that key.
-The service takes the Redis client as an argument — no FastAPI or app.state
-imports live here.
-"""
+"""Refresh-token service backed by Redis, bound to DPoP keys."""
 
 import json
 import logging
@@ -40,23 +34,27 @@ async def issue_pair(
     redis_client: redis.Redis,
     user_id: int,
     role: str,
+    *,
+    cnf_jkt: str,
 ) -> TokenPair:
-    """Issue a fresh access + refresh pair and register the refresh jti.
+    """Issue a fresh access + refresh pair, binding the refresh to a key.
 
     Args:
         redis_client: Active async Redis client.
         user_id: Subject id — a client or employee primary key.
         role: "CLIENT" or an employee role.
+        cnf_jkt: JWK thumbprint of the client's DPoP key. Stored both in
+            the refresh token's ``cnf.jkt`` and in the Redis record.
 
     Returns:
-        The newly signed pair.
+        The newly signed pair. ``token_type`` is ``"DPoP"``.
     """
     access = create_access_token(user_id, role)
-    refresh, jti = create_refresh_token(user_id, role)
+    refresh, jti = create_refresh_token(user_id, role, cnf_jkt=cnf_jkt)
 
     await redis_client.set(
         _key(jti),
-        json.dumps({"user_id": user_id, "role": role}),
+        json.dumps({"user_id": user_id, "role": role, "jkt": cnf_jkt}),
         ex=settings.refresh_token_ttl,
     )
 
@@ -67,41 +65,79 @@ async def issue_pair(
     return TokenPair(access_token=access, refresh_token=refresh)
 
 
+def _extract_cnf_jkt(claims: dict) -> str:
+    """Pull ``cnf.jkt`` out of a decoded refresh token.
+
+    Raises:
+        InvalidTokenError: The claim is missing or malformed. A token
+            without ``cnf.jkt`` was issued before DPoP binding existed
+            and can no longer be used; the client must log in again.
+    """
+    cnf = claims.get("cnf")
+    if not isinstance(cnf, dict):
+        raise InvalidTokenError("missing cnf")
+    jkt = cnf.get("jkt")
+    if not isinstance(jkt, str) or not jkt:
+        raise InvalidTokenError("missing cnf.jkt")
+    return jkt
+
+
 async def rotate(
     redis_client: redis.Redis,
     refresh_token: str,
+    *,
+    proof_jkt: str,
 ) -> TokenPair:
     """Exchange a valid refresh token for a new pair (rotation).
-
-    The old jti is deleted before the new pair is issued, so a leaked
-    refresh token can be used at most once.
 
     Args:
         redis_client: Active async Redis client.
         refresh_token: The token to consume.
+        proof_jkt: Thumbprint of the key that signed this request's DPoP
+            proof. Computed by ``verify_dpop_proof``.
 
     Returns:
-        A new access + refresh pair.
+        A new access + refresh pair, bound to the same ``jkt``.
 
     Raises:
         InvalidTokenError: The token is malformed, expired, of the wrong
-            type, or its jti is no longer registered (revoked or already
+            type, missing ``cnf.jkt``, its ``cnf.jkt`` differs from the
+            proof's, the Redis record's ``jkt`` differs from the proof's,
+            or the jti is no longer registered (revoked or already
             rotated).
     """
     claims = decode_refresh_token(refresh_token)
     jti = claims["jti"]
+    token_jkt = _extract_cnf_jkt(claims)
 
-    deleted = await redis_client.delete(_key(jti))
-    if deleted == 0:
+    if token_jkt != proof_jkt:
+        logger.warning(
+            "refresh rotation rejected jti_prefix=%s reason=jkt_mismatch",
+            _prefix(jti),
+        )
+        raise InvalidTokenError("jkt_mismatch")
+
+    raw = await redis_client.getdel(_key(jti))
+    if raw is None:
         logger.warning(
             "refresh rotation rejected jti_prefix=%s reason=revoked",
             _prefix(jti),
         )
         raise InvalidTokenError("revoked")
 
-    user_id = int(claims["sub"])
-    role = claims["role"]
-    pair = await issue_pair(redis_client, user_id, role)
+    stored = json.loads(raw)
+    if stored.get("jkt") != proof_jkt:
+        logger.warning(
+            "refresh rotation rejected jti_prefix=%s reason=stored_jkt_mismatch",
+            _prefix(jti),
+        )
+        raise InvalidTokenError("jkt_mismatch")
+
+    user_id = stored["user_id"]
+    role = stored["role"]
+    pair = await issue_pair(
+        redis_client, user_id, role, cnf_jkt=proof_jkt,
+    )
     logger.info("refresh rotated user_id=%s role=%s", user_id, role)
     return pair
 
@@ -109,17 +145,35 @@ async def rotate(
 async def revoke(
     redis_client: redis.Redis,
     refresh_token: str,
+    *,
+    proof_jkt: str,
 ) -> None:
     """Delete a refresh token's jti. Idempotent.
 
     Args:
         redis_client: Active async Redis client.
         refresh_token: The token to revoke.
+        proof_jkt: Thumbprint of the key that signed the DPoP proof.
 
     Raises:
-        InvalidTokenError: The token is malformed, expired, or of the
-            wrong type. A token whose jti is already gone is not an error.
+        InvalidTokenError: The token is malformed, expired, of the wrong
+            type, or its ``cnf.jkt`` does not match ``proof_jkt``.
     """
     claims = decode_refresh_token(refresh_token)
-    await redis_client.delete(_key(claims["jti"]))
-    logger.info("refresh revoked jti_prefix=%s", _prefix(claims["jti"]))
+    jti = claims["jti"]
+    token_jkt = _extract_cnf_jkt(claims)
+
+    if token_jkt != proof_jkt:
+        raise InvalidTokenError("jkt_mismatch")
+
+    raw = await redis_client.getdel(_key(jti))
+    if raw is not None:
+        stored = json.loads(raw)
+        if stored.get("jkt") != proof_jkt:
+            logger.warning(
+                "refresh revoke burned jti_prefix=%s reason=stored_jkt_mismatch",
+                _prefix(jti),
+            )
+            raise InvalidTokenError("jkt_mismatch")
+
+    logger.info("refresh revoked jti_prefix=%s", _prefix(jti))

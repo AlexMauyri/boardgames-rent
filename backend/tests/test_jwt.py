@@ -24,17 +24,18 @@ def test_access_token_round_trip():
 
 
 def test_refresh_token_round_trip_returns_jti():
-    token, jti = create_refresh_token(user_id=7, role="ADMIN")
+    token, jti = create_refresh_token(user_id=7, role="ADMIN", cnf_jkt="test-jkt")
     claims = decode_refresh_token(token)
     assert claims["sub"] == "7"
     assert claims["role"] == "ADMIN"
     assert claims["type"] == "refresh"
     assert claims["jti"] == jti
+    assert claims["cnf"] == {"jkt": "test-jkt"}
 
 
 def test_refresh_tokens_are_unique():
-    _, jti1 = create_refresh_token(1, "CLIENT")
-    _, jti2 = create_refresh_token(1, "CLIENT")
+    _, jti1 = create_refresh_token(1, "CLIENT", cnf_jkt="a")
+    _, jti2 = create_refresh_token(1, "CLIENT", cnf_jkt="a")
     assert jti1 != jti2
 
 
@@ -77,7 +78,7 @@ def test_access_token_passed_as_refresh_rejected():
 
 
 def test_refresh_token_passed_as_access_rejected():
-    refresh, _ = create_refresh_token(1, "CLIENT")
+    refresh, _ = create_refresh_token(1, "CLIENT", cnf_jkt="test-jkt")
     with pytest.raises(InvalidTokenError):
         decode_access_token(refresh)
 

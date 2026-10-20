@@ -21,14 +21,17 @@ class TokenPair(BaseModel):
     """A freshly issued access + refresh token pair.
 
     Attributes:
-        access_token: Short-lived token for the Authorization header.
-        refresh_token: Long-lived token exchanged at /auth/refresh.
-        token_type: Always "bearer"; kept explicit for OAuth2 clients.
+        access_token: Short-lived Bearer token for the Authorization
+            header on API endpoints.
+        refresh_token: Long-lived DPoP-bound token exchanged at
+            ``/auth/refresh``; requires a matching DPoP proof.
+        token_type: Always ``"DPoP"`` for the refresh flow. API
+            requests use ``Authorization: Bearer <access_token>``.
     """
 
     access_token: str
     refresh_token: str
-    token_type: Literal["bearer"] = "bearer"
+    token_type: Literal["DPoP"] = "DPoP"
 
 
 class RefreshRequest(BaseModel):

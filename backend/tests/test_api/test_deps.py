@@ -70,9 +70,8 @@ async def test_garbage_token_401():
 
 
 async def test_refresh_token_as_access_401(session):
-    # A refresh token must not authenticate a request.
     from app.auth.jwt import create_refresh_token
-    refresh, _ = create_refresh_token(1, "CLIENT")
+    refresh, _ = create_refresh_token(1, "CLIENT", cnf_jkt="test-jkt")
     r = await _get(_mini_app(), "/me", token=refresh)
     assert r.status_code == 401
 

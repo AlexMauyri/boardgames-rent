@@ -114,15 +114,19 @@ def create_access_token(user_id: int, role: str) -> str:
     return _encode(payload)
 
 
-def create_refresh_token(user_id: int, role: str) -> tuple[str, str]:
-    """Issue a long-lived refresh token together with its unique id.
-
-    The caller must persist ``jti`` (typically in Redis) to make the
-    token revocable. Without that, the token is valid until it expires.
+def create_refresh_token(
+    user_id: int,
+    role: str,
+    *,
+    cnf_jkt: str,
+) -> tuple[str, str]:
+    """Issue a long-lived refresh token bound to a JWK thumbprint.
 
     Args:
         user_id: Subject id — a client or employee primary key.
         role: "CLIENT" or an employee role.
+        cnf_jkt: Base64url JWK thumbprint of the client's public key. 
+            Required: DPoP-bound tokens have no unbound variant.
 
     Returns:
         A tuple ``(token, jti)``. ``jti`` is a random hex string.
@@ -134,6 +138,7 @@ def create_refresh_token(user_id: int, role: str) -> tuple[str, str]:
         "role": role,
         "type": _TOKEN_TYPE_REFRESH,
         "jti": jti,
+        "cnf": {"jkt": cnf_jkt},
         "iat": now,
         "exp": now + timedelta(seconds=settings.refresh_token_ttl),
     }
