@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Board Game Rental API",
-    "description": "Full collection for the board game rental backend. \n\n**Prerequisites**\n- `docker compose up -d`\n- `docker compose run --rm backend python -m scripts.seed --reset --yes`\n\n**Run order** — folders top-to-bottom via Collection Runner. Variables flow automatically.\n\n**Notes**\n- Client email is unique per run (`{{$guid}}`).\n- Courier / manager / damage flows consume state from seed; re-run seed between full runs.\n- Admin flow uses `admin@bgrent.io`. Client created in `01-Auth` is deactivated and reactivated in `12-Admin: Clients`.\n- Cover upload in `09-Admin: Games` is skipped unless `cover_file_path` variable is set to an absolute path of a JPEG file on the machine running Postman.\n- **Note on status codes:** POST /admin/{categories, pickup-points, games, employees, copies} return **201**, all other successful POSTs return **200**, DELETE returns **204**.",
+    "description": "Full collection for the board game rental backend.\n\n**Setup**\n1. `docker compose up -d`\n2. `docker compose run --rm backend python -m scripts.seed --reset --yes`\n\n**DPoP Flow**\nAuth requests send an initial DPoP proof without a nonce. The server responds with a `use_dpop_nonce` challenge. The Test script catches this, signs a new proof with the provided nonce, and retries the request via `pm.sendRequest`. All assertions run against the retry response.\n\n**Run order** — Collection Runner, top to bottom. Variables flow automatically.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -35,7 +35,8 @@
     {"key": "created_employee_email", "value": ""},
     {"key": "created_copy_id", "value": ""},
     {"key": "created_copy_number", "value": ""},
-    {"key": "cover_file_path", "value": ""}
+    {"key": "cover_file_path", "value": ""},
+    {"key": "dpop_private_jwk", "value": "{\"kty\": \"EC\", \"crv\": \"P-256\", \"x\": \"QmKMTqO3zPYIPOl5jgypsMr70Vl-m8gbIb0xVQS2Tis\", \"y\": \"x0MLLFdb5X_-g_QWnZ22q9UcK98-gRVbGV1Ski4Ha2w\", \"d\": \"LEM_0jUHde0-JzRPgYoOlSJstZwnjBVJSJFuLOachBw\"}"}
   ],
   "item": [
     {
@@ -83,16 +84,61 @@
         {
           "name": "Login client",
           "event": [
+            {"listen": "prerequest", "script": {"type": "text/javascript", "exec": [
+              "async function sign(htm, htu, nonce) {",
+              "    const jwk = JSON.parse(pm.collectionVariables.get('dpop_private_jwk'));",
+              "    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);",
+              "    const h = { typ: 'dpop+jwt', alg: 'ES256', jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y } };",
+              "    const p = { jti: [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''), htm: htm, htu: htu, iat: Math.floor(Date.now() / 1000) };",
+              "    if (nonce) p.nonce = nonce;",
+              "    const b64 = s => btoa(unescape(encodeURIComponent(s))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const b64buf = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const si = b64(JSON.stringify(h)) + '.' + b64(JSON.stringify(p));",
+              "    const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(si));",
+              "    return si + '.' + b64buf(sig);",
+              "}",
+              "const url = pm.variables.replaceIn(pm.request.url.toString());",
+              "const htu = url.split('?')[0].split('#')[0];",
+              "const proof = await sign(pm.request.method, htu, null);",
+              "pm.request.headers.add({ key: 'DPoP', value: proof });"
+            ]}},
             {"listen": "test", "script": {"type": "text/javascript", "exec": [
-              "pm.test('Status 200', () => pm.response.to.have.status(200));",
-              "const r = pm.response.json();",
-              "pm.test('Returns bearer pair', () => {",
-              "  pm.expect(r.access_token).to.be.a('string');",
-              "  pm.expect(r.refresh_token).to.be.a('string');",
-              "  pm.expect(r.token_type).to.eql('bearer');",
-              "});",
-              "pm.collectionVariables.set('client_access_token', r.access_token);",
-              "pm.collectionVariables.set('refresh_token', r.refresh_token);"
+              "async function sign(htm, htu, nonce) {",
+              "    const jwk = JSON.parse(pm.collectionVariables.get('dpop_private_jwk'));",
+              "    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);",
+              "    const h = { typ: 'dpop+jwt', alg: 'ES256', jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y } };",
+              "    const p = { jti: [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''), htm: htm, htu: htu, iat: Math.floor(Date.now() / 1000) };",
+              "    if (nonce) p.nonce = nonce;",
+              "    const b64 = s => btoa(unescape(encodeURIComponent(s))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const b64buf = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const si = b64(JSON.stringify(h)) + '.' + b64(JSON.stringify(p));",
+              "    const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(si));",
+              "    return si + '.' + b64buf(sig);",
+              "}",
+              "function post(url, headers, body) {",
+              "    return new Promise((resolve, reject) => pm.sendRequest({ url, method: 'POST', header: headers, body: { mode: 'raw', raw: body } }, (e, r) => e ? reject(e) : resolve(r)));",
+              "}",
+              "async function run() {",
+              "    let res = pm.response;",
+              "    if (res.code === 401 && res.headers.has('DPoP-Nonce')) {",
+              "        const nonce = res.headers.get('DPoP-Nonce');",
+              "        const url = pm.variables.replaceIn(pm.request.url.toString());",
+              "        const htu = url.split('?')[0].split('#')[0];",
+              "        const bodyStr = pm.variables.replaceIn(pm.request.body.raw);",
+              "        const proof = await sign(pm.request.method, htu, nonce);",
+              "        res = await post(url, { 'DPoP': proof, 'Content-Type': 'application/json' }, bodyStr);",
+              "    }",
+              "    pm.test('Status 200', () => pm.expect(res.code).to.equal(200));",
+              "    const b = res.json();",
+              "    pm.test('DPoP pair', () => {",
+              "        pm.expect(b.token_type).to.eql('DPoP');",
+              "        pm.expect(b.access_token).to.be.a('string');",
+              "        pm.expect(b.refresh_token).to.be.a('string');",
+              "    });",
+              "    pm.collectionVariables.set('client_access_token', b.access_token);",
+              "    pm.collectionVariables.set('refresh_token', b.refresh_token);",
+              "}",
+              "await run();"
             ]}}
           ],
           "request": {
@@ -104,9 +150,56 @@
         {
           "name": "Login employee (admin)",
           "event": [
+            {"listen": "prerequest", "script": {"type": "text/javascript", "exec": [
+              "async function sign(htm, htu, nonce) {",
+              "    const jwk = JSON.parse(pm.collectionVariables.get('dpop_private_jwk'));",
+              "    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);",
+              "    const h = { typ: 'dpop+jwt', alg: 'ES256', jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y } };",
+              "    const p = { jti: [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''), htm: htm, htu: htu, iat: Math.floor(Date.now() / 1000) };",
+              "    if (nonce) p.nonce = nonce;",
+              "    const b64 = s => btoa(unescape(encodeURIComponent(s))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const b64buf = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const si = b64(JSON.stringify(h)) + '.' + b64(JSON.stringify(p));",
+              "    const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(si));",
+              "    return si + '.' + b64buf(sig);",
+              "}",
+              "const url = pm.variables.replaceIn(pm.request.url.toString());",
+              "const htu = url.split('?')[0].split('#')[0];",
+              "const proof = await sign(pm.request.method, htu, null);",
+              "pm.request.headers.add({ key: 'DPoP', value: proof });"
+            ]}},
             {"listen": "test", "script": {"type": "text/javascript", "exec": [
-              "pm.test('Status 200', () => pm.response.to.have.status(200));",
-              "pm.collectionVariables.set('admin_access_token', pm.response.json().access_token);"
+              "async function sign(htm, htu, nonce) {",
+              "    const jwk = JSON.parse(pm.collectionVariables.get('dpop_private_jwk'));",
+              "    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);",
+              "    const h = { typ: 'dpop+jwt', alg: 'ES256', jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y } };",
+              "    const p = { jti: [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''), htm: htm, htu: htu, iat: Math.floor(Date.now() / 1000) };",
+              "    if (nonce) p.nonce = nonce;",
+              "    const b64 = s => btoa(unescape(encodeURIComponent(s))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const b64buf = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const si = b64(JSON.stringify(h)) + '.' + b64(JSON.stringify(p));",
+              "    const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(si));",
+              "    return si + '.' + b64buf(sig);",
+              "}",
+              "function post(url, headers, body) {",
+              "    return new Promise((resolve, reject) => pm.sendRequest({ url, method: 'POST', header: headers, body: { mode: 'raw', raw: body } }, (e, r) => e ? reject(e) : resolve(r)));",
+              "}",
+              "async function run() {",
+              "    let res = pm.response;",
+              "    if (res.code === 401 && res.headers.has('DPoP-Nonce')) {",
+              "        const nonce = res.headers.get('DPoP-Nonce');",
+              "        const url = pm.variables.replaceIn(pm.request.url.toString());",
+              "        const htu = url.split('?')[0].split('#')[0];",
+              "        const bodyStr = pm.variables.replaceIn(pm.request.body.raw);",
+              "        const proof = await sign(pm.request.method, htu, nonce);",
+              "        res = await post(url, { 'DPoP': proof, 'Content-Type': 'application/json' }, bodyStr);",
+              "    }",
+              "    pm.test('Status 200', () => pm.expect(res.code).to.equal(200));",
+              "    const b = res.json();",
+              "    pm.test('Returns DPoP pair', () => pm.expect(b.token_type).to.eql('DPoP'));",
+              "    pm.collectionVariables.set('admin_access_token', b.access_token);",
+              "}",
+              "await run();"
             ]}}
           ],
           "request": {
@@ -118,9 +211,55 @@
         {
           "name": "Login employee (courier)",
           "event": [
+            {"listen": "prerequest", "script": {"type": "text/javascript", "exec": [
+              "async function sign(htm, htu, nonce) {",
+              "    const jwk = JSON.parse(pm.collectionVariables.get('dpop_private_jwk'));",
+              "    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);",
+              "    const h = { typ: 'dpop+jwt', alg: 'ES256', jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y } };",
+              "    const p = { jti: [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''), htm: htm, htu: htu, iat: Math.floor(Date.now() / 1000) };",
+              "    if (nonce) p.nonce = nonce;",
+              "    const b64 = s => btoa(unescape(encodeURIComponent(s))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const b64buf = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const si = b64(JSON.stringify(h)) + '.' + b64(JSON.stringify(p));",
+              "    const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(si));",
+              "    return si + '.' + b64buf(sig);",
+              "}",
+              "const url = pm.variables.replaceIn(pm.request.url.toString());",
+              "const htu = url.split('?')[0].split('#')[0];",
+              "const proof = await sign(pm.request.method, htu, null);",
+              "pm.request.headers.add({ key: 'DPoP', value: proof });"
+            ]}},
             {"listen": "test", "script": {"type": "text/javascript", "exec": [
-              "pm.test('Status 200', () => pm.response.to.have.status(200));",
-              "pm.collectionVariables.set('courier_access_token', pm.response.json().access_token);"
+              "async function sign(htm, htu, nonce) {",
+              "    const jwk = JSON.parse(pm.collectionVariables.get('dpop_private_jwk'));",
+              "    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);",
+              "    const h = { typ: 'dpop+jwt', alg: 'ES256', jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y } };",
+              "    const p = { jti: [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''), htm: htm, htu: htu, iat: Math.floor(Date.now() / 1000) };",
+              "    if (nonce) p.nonce = nonce;",
+              "    const b64 = s => btoa(unescape(encodeURIComponent(s))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const b64buf = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const si = b64(JSON.stringify(h)) + '.' + b64(JSON.stringify(p));",
+              "    const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(si));",
+              "    return si + '.' + b64buf(sig);",
+              "}",
+              "function post(url, headers, body) {",
+              "    return new Promise((resolve, reject) => pm.sendRequest({ url, method: 'POST', header: headers, body: { mode: 'raw', raw: body } }, (e, r) => e ? reject(e) : resolve(r)));",
+              "}",
+              "async function run() {",
+              "    let res = pm.response;",
+              "    if (res.code === 401 && res.headers.has('DPoP-Nonce')) {",
+              "        const nonce = res.headers.get('DPoP-Nonce');",
+              "        const url = pm.variables.replaceIn(pm.request.url.toString());",
+              "        const htu = url.split('?')[0].split('#')[0];",
+              "        const bodyStr = pm.variables.replaceIn(pm.request.body.raw);",
+              "        const proof = await sign(pm.request.method, htu, nonce);",
+              "        res = await post(url, { 'DPoP': proof, 'Content-Type': 'application/json' }, bodyStr);",
+              "    }",
+              "    pm.test('Status 200', () => pm.expect(res.code).to.equal(200));",
+              "    const b = res.json();",
+              "    pm.collectionVariables.set('courier_access_token', b.access_token);",
+              "}",
+              "await run();"
             ]}}
           ],
           "request": {
@@ -132,9 +271,55 @@
         {
           "name": "Login employee (manager)",
           "event": [
+            {"listen": "prerequest", "script": {"type": "text/javascript", "exec": [
+              "async function sign(htm, htu, nonce) {",
+              "    const jwk = JSON.parse(pm.collectionVariables.get('dpop_private_jwk'));",
+              "    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);",
+              "    const h = { typ: 'dpop+jwt', alg: 'ES256', jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y } };",
+              "    const p = { jti: [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''), htm: htm, htu: htu, iat: Math.floor(Date.now() / 1000) };",
+              "    if (nonce) p.nonce = nonce;",
+              "    const b64 = s => btoa(unescape(encodeURIComponent(s))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const b64buf = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const si = b64(JSON.stringify(h)) + '.' + b64(JSON.stringify(p));",
+              "    const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(si));",
+              "    return si + '.' + b64buf(sig);",
+              "}",
+              "const url = pm.variables.replaceIn(pm.request.url.toString());",
+              "const htu = url.split('?')[0].split('#')[0];",
+              "const proof = await sign(pm.request.method, htu, null);",
+              "pm.request.headers.add({ key: 'DPoP', value: proof });"
+            ]}},
             {"listen": "test", "script": {"type": "text/javascript", "exec": [
-              "pm.test('Status 200', () => pm.response.to.have.status(200));",
-              "pm.collectionVariables.set('manager_access_token', pm.response.json().access_token);"
+              "async function sign(htm, htu, nonce) {",
+              "    const jwk = JSON.parse(pm.collectionVariables.get('dpop_private_jwk'));",
+              "    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);",
+              "    const h = { typ: 'dpop+jwt', alg: 'ES256', jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y } };",
+              "    const p = { jti: [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''), htm: htm, htu: htu, iat: Math.floor(Date.now() / 1000) };",
+              "    if (nonce) p.nonce = nonce;",
+              "    const b64 = s => btoa(unescape(encodeURIComponent(s))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const b64buf = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const si = b64(JSON.stringify(h)) + '.' + b64(JSON.stringify(p));",
+              "    const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(si));",
+              "    return si + '.' + b64buf(sig);",
+              "}",
+              "function post(url, headers, body) {",
+              "    return new Promise((resolve, reject) => pm.sendRequest({ url, method: 'POST', header: headers, body: { mode: 'raw', raw: body } }, (e, r) => e ? reject(e) : resolve(r)));",
+              "}",
+              "async function run() {",
+              "    let res = pm.response;",
+              "    if (res.code === 401 && res.headers.has('DPoP-Nonce')) {",
+              "        const nonce = res.headers.get('DPoP-Nonce');",
+              "        const url = pm.variables.replaceIn(pm.request.url.toString());",
+              "        const htu = url.split('?')[0].split('#')[0];",
+              "        const bodyStr = pm.variables.replaceIn(pm.request.body.raw);",
+              "        const proof = await sign(pm.request.method, htu, nonce);",
+              "        res = await post(url, { 'DPoP': proof, 'Content-Type': 'application/json' }, bodyStr);",
+              "    }",
+              "    pm.test('Status 200', () => pm.expect(res.code).to.equal(200));",
+              "    const b = res.json();",
+              "    pm.collectionVariables.set('manager_access_token', b.access_token);",
+              "}",
+              "await run();"
             ]}}
           ],
           "request": {
@@ -146,9 +331,54 @@
         {
           "name": "Login employee (wrong password → 401)",
           "event": [
+            {"listen": "prerequest", "script": {"type": "text/javascript", "exec": [
+              "async function sign(htm, htu, nonce) {",
+              "    const jwk = JSON.parse(pm.collectionVariables.get('dpop_private_jwk'));",
+              "    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);",
+              "    const h = { typ: 'dpop+jwt', alg: 'ES256', jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y } };",
+              "    const p = { jti: [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''), htm: htm, htu: htu, iat: Math.floor(Date.now() / 1000) };",
+              "    if (nonce) p.nonce = nonce;",
+              "    const b64 = s => btoa(unescape(encodeURIComponent(s))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const b64buf = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const si = b64(JSON.stringify(h)) + '.' + b64(JSON.stringify(p));",
+              "    const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(si));",
+              "    return si + '.' + b64buf(sig);",
+              "}",
+              "const url = pm.variables.replaceIn(pm.request.url.toString());",
+              "const htu = url.split('?')[0].split('#')[0];",
+              "const proof = await sign(pm.request.method, htu, null);",
+              "pm.request.headers.add({ key: 'DPoP', value: proof });"
+            ]}},
             {"listen": "test", "script": {"type": "text/javascript", "exec": [
-              "pm.test('Status 401', () => pm.response.to.have.status(401));",
-              "pm.test('WWW-Authenticate header', () => pm.expect(pm.response.headers.get('WWW-Authenticate') || '').to.include('Bearer'));"
+              "async function sign(htm, htu, nonce) {",
+              "    const jwk = JSON.parse(pm.collectionVariables.get('dpop_private_jwk'));",
+              "    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);",
+              "    const h = { typ: 'dpop+jwt', alg: 'ES256', jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y } };",
+              "    const p = { jti: [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''), htm: htm, htu: htu, iat: Math.floor(Date.now() / 1000) };",
+              "    if (nonce) p.nonce = nonce;",
+              "    const b64 = s => btoa(unescape(encodeURIComponent(s))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const b64buf = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const si = b64(JSON.stringify(h)) + '.' + b64(JSON.stringify(p));",
+              "    const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(si));",
+              "    return si + '.' + b64buf(sig);",
+              "}",
+              "function post(url, headers, body) {",
+              "    return new Promise((resolve, reject) => pm.sendRequest({ url, method: 'POST', header: headers, body: { mode: 'raw', raw: body } }, (e, r) => e ? reject(e) : resolve(r)));",
+              "}",
+              "async function run() {",
+              "    let res = pm.response;",
+              "    if (res.code === 401 && res.headers.has('DPoP-Nonce')) {",
+              "        const nonce = res.headers.get('DPoP-Nonce');",
+              "        const url = pm.variables.replaceIn(pm.request.url.toString());",
+              "        const htu = url.split('?')[0].split('#')[0];",
+              "        const bodyStr = pm.variables.replaceIn(pm.request.body.raw);",
+              "        const proof = await sign(pm.request.method, htu, nonce);",
+              "        res = await post(url, { 'DPoP': proof, 'Content-Type': 'application/json' }, bodyStr);",
+              "    }",
+              "    pm.test('Status 401', () => pm.expect(res.code).to.equal(401));",
+              "    pm.test('Invalid credentials', () => pm.expect(res.json().detail).to.eql('Invalid credentials'));",
+              "}",
+              "await run();"
             ]}}
           ],
           "request": {
@@ -768,23 +998,13 @@
           }
         },
         {
-            "name": "PUT /admin/games/{id}/categories (raw list)",
-            "event": [
-                {
-                "listen": "test",
-                "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                    "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                    "pm.test('Returns the same game', () => {",
-                    "    pm.expect(pm.response.json().id).to.eql(",
-                    "        Number(pm.collectionVariables.get('created_game_id'))",
-                    "    );",
-                    "});"
-                    ]
-                }
-                }
-            ],
+          "name": "PUT /admin/games/{id}/categories (raw list)",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Returns the same game', () => pm.expect(pm.response.json().id).to.eql(Number(pm.collectionVariables.get('created_game_id'))));"
+            ]}}
+          ],
           "request": {
             "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{admin_access_token}}", "type": "string"}]},
             "method": "PUT", "header": [],
@@ -1029,15 +1249,60 @@
       "name": "13 - Cleanup",
       "item": [
         {
-          "name": "POST /auth/refresh (rotation)",
+          "name": "POST /auth/refresh (rotation, DPoP)",
           "event": [
+            {"listen": "prerequest", "script": {"type": "text/javascript", "exec": [
+              "async function sign(htm, htu, nonce) {",
+              "    const jwk = JSON.parse(pm.collectionVariables.get('dpop_private_jwk'));",
+              "    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);",
+              "    const h = { typ: 'dpop+jwt', alg: 'ES256', jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y } };",
+              "    const p = { jti: [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''), htm: htm, htu: htu, iat: Math.floor(Date.now() / 1000) };",
+              "    if (nonce) p.nonce = nonce;",
+              "    const b64 = s => btoa(unescape(encodeURIComponent(s))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const b64buf = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const si = b64(JSON.stringify(h)) + '.' + b64(JSON.stringify(p));",
+              "    const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(si));",
+              "    return si + '.' + b64buf(sig);",
+              "}",
+              "const url = pm.variables.replaceIn(pm.request.url.toString());",
+              "const htu = url.split('?')[0].split('#')[0];",
+              "const proof = await sign(pm.request.method, htu, null);",
+              "pm.request.headers.add({ key: 'DPoP', value: proof });"
+            ]}},
             {"listen": "test", "script": {"type": "text/javascript", "exec": [
-              "pm.test('Status 200', () => pm.response.to.have.status(200));",
-              "const old = pm.collectionVariables.get('refresh_token');",
-              "const r = pm.response.json();",
-              "pm.test('New refresh != old', () => pm.expect(r.refresh_token).to.not.eql(old));",
-              "pm.collectionVariables.set('refresh_token', r.refresh_token);",
-              "pm.collectionVariables.set('client_access_token', r.access_token);"
+              "async function sign(htm, htu, nonce) {",
+              "    const jwk = JSON.parse(pm.collectionVariables.get('dpop_private_jwk'));",
+              "    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);",
+              "    const h = { typ: 'dpop+jwt', alg: 'ES256', jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y } };",
+              "    const p = { jti: [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''), htm: htm, htu: htu, iat: Math.floor(Date.now() / 1000) };",
+              "    if (nonce) p.nonce = nonce;",
+              "    const b64 = s => btoa(unescape(encodeURIComponent(s))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const b64buf = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const si = b64(JSON.stringify(h)) + '.' + b64(JSON.stringify(p));",
+              "    const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(si));",
+              "    return si + '.' + b64buf(sig);",
+              "}",
+              "function post(url, headers, body) {",
+              "    return new Promise((resolve, reject) => pm.sendRequest({ url, method: 'POST', header: headers, body: { mode: 'raw', raw: body } }, (e, r) => e ? reject(e) : resolve(r)));",
+              "}",
+              "async function run() {",
+              "    let res = pm.response;",
+              "    if (res.code === 401 && res.headers.has('DPoP-Nonce')) {",
+              "        const nonce = res.headers.get('DPoP-Nonce');",
+              "        const url = pm.variables.replaceIn(pm.request.url.toString());",
+              "        const htu = url.split('?')[0].split('#')[0];",
+              "        const bodyStr = pm.variables.replaceIn(pm.request.body.raw);",
+              "        const proof = await sign(pm.request.method, htu, nonce);",
+              "        res = await post(url, { 'DPoP': proof, 'Content-Type': 'application/json' }, bodyStr);",
+              "    }",
+              "    pm.test('Status 200', () => pm.expect(res.code).to.equal(200));",
+              "    const b = res.json();",
+              "    pm.test('DPoP pair', () => pm.expect(b.token_type).to.eql('DPoP'));",
+              "    pm.test('New refresh differs', () => pm.expect(b.refresh_token).to.be.a('string'));",
+              "    pm.collectionVariables.set('refresh_token', b.refresh_token);",
+              "    pm.collectionVariables.set('client_access_token', b.access_token);",
+              "}",
+              "await run();"
             ]}}
           ],
           "request": {
@@ -1047,10 +1312,55 @@
           }
         },
         {
-          "name": "POST /auth/logout (204)",
+          "name": "POST /auth/logout (204, DPoP)",
           "event": [
+            {"listen": "prerequest", "script": {"type": "text/javascript", "exec": [
+              "async function sign(htm, htu, nonce) {",
+              "    const jwk = JSON.parse(pm.collectionVariables.get('dpop_private_jwk'));",
+              "    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);",
+              "    const h = { typ: 'dpop+jwt', alg: 'ES256', jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y } };",
+              "    const p = { jti: [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''), htm: htm, htu: htu, iat: Math.floor(Date.now() / 1000) };",
+              "    if (nonce) p.nonce = nonce;",
+              "    const b64 = s => btoa(unescape(encodeURIComponent(s))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const b64buf = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const si = b64(JSON.stringify(h)) + '.' + b64(JSON.stringify(p));",
+              "    const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(si));",
+              "    return si + '.' + b64buf(sig);",
+              "}",
+              "const url = pm.variables.replaceIn(pm.request.url.toString());",
+              "const htu = url.split('?')[0].split('#')[0];",
+              "const proof = await sign(pm.request.method, htu, null);",
+              "pm.request.headers.add({ key: 'DPoP', value: proof });"
+            ]}},
             {"listen": "test", "script": {"type": "text/javascript", "exec": [
-              "pm.test('Status 204', () => pm.response.to.have.status(204));"
+              "async function sign(htm, htu, nonce) {",
+              "    const jwk = JSON.parse(pm.collectionVariables.get('dpop_private_jwk'));",
+              "    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);",
+              "    const h = { typ: 'dpop+jwt', alg: 'ES256', jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y } };",
+              "    const p = { jti: [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''), htm: htm, htu: htu, iat: Math.floor(Date.now() / 1000) };",
+              "    if (nonce) p.nonce = nonce;",
+              "    const b64 = s => btoa(unescape(encodeURIComponent(s))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const b64buf = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const si = b64(JSON.stringify(h)) + '.' + b64(JSON.stringify(p));",
+              "    const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(si));",
+              "    return si + '.' + b64buf(sig);",
+              "}",
+              "function post(url, headers, body) {",
+              "    return new Promise((resolve, reject) => pm.sendRequest({ url, method: 'POST', header: headers, body: { mode: 'raw', raw: body } }, (e, r) => e ? reject(e) : resolve(r)));",
+              "}",
+              "async function run() {",
+              "    let res = pm.response;",
+              "    if (res.code === 401 && res.headers.has('DPoP-Nonce')) {",
+              "        const nonce = res.headers.get('DPoP-Nonce');",
+              "        const url = pm.variables.replaceIn(pm.request.url.toString());",
+              "        const htu = url.split('?')[0].split('#')[0];",
+              "        const bodyStr = pm.variables.replaceIn(pm.request.body.raw);",
+              "        const proof = await sign(pm.request.method, htu, nonce);",
+              "        res = await post(url, { 'DPoP': proof, 'Content-Type': 'application/json' }, bodyStr);",
+              "    }",
+              "    pm.test('Status 204', () => pm.expect(res.code).to.equal(204));",
+              "}",
+              "await run();"
             ]}}
           ],
           "request": {
@@ -1060,10 +1370,55 @@
           }
         },
         {
-          "name": "POST /auth/refresh after logout → 401",
+          "name": "POST /auth/refresh after logout → 401 (DPoP)",
           "event": [
+            {"listen": "prerequest", "script": {"type": "text/javascript", "exec": [
+              "async function sign(htm, htu, nonce) {",
+              "    const jwk = JSON.parse(pm.collectionVariables.get('dpop_private_jwk'));",
+              "    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);",
+              "    const h = { typ: 'dpop+jwt', alg: 'ES256', jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y } };",
+              "    const p = { jti: [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''), htm: htm, htu: htu, iat: Math.floor(Date.now() / 1000) };",
+              "    if (nonce) p.nonce = nonce;",
+              "    const b64 = s => btoa(unescape(encodeURIComponent(s))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const b64buf = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const si = b64(JSON.stringify(h)) + '.' + b64(JSON.stringify(p));",
+              "    const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(si));",
+              "    return si + '.' + b64buf(sig);",
+              "}",
+              "const url = pm.variables.replaceIn(pm.request.url.toString());",
+              "const htu = url.split('?')[0].split('#')[0];",
+              "const proof = await sign(pm.request.method, htu, null);",
+              "pm.request.headers.add({ key: 'DPoP', value: proof });"
+            ]}},
             {"listen": "test", "script": {"type": "text/javascript", "exec": [
-              "pm.test('Status 401', () => pm.response.to.have.status(401));"
+              "async function sign(htm, htu, nonce) {",
+              "    const jwk = JSON.parse(pm.collectionVariables.get('dpop_private_jwk'));",
+              "    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);",
+              "    const h = { typ: 'dpop+jwt', alg: 'ES256', jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y } };",
+              "    const p = { jti: [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''), htm: htm, htu: htu, iat: Math.floor(Date.now() / 1000) };",
+              "    if (nonce) p.nonce = nonce;",
+              "    const b64 = s => btoa(unescape(encodeURIComponent(s))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const b64buf = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const si = b64(JSON.stringify(h)) + '.' + b64(JSON.stringify(p));",
+              "    const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(si));",
+              "    return si + '.' + b64buf(sig);",
+              "}",
+              "function post(url, headers, body) {",
+              "    return new Promise((resolve, reject) => pm.sendRequest({ url, method: 'POST', header: headers, body: { mode: 'raw', raw: body } }, (e, r) => e ? reject(e) : resolve(r)));",
+              "}",
+              "async function run() {",
+              "    let res = pm.response;",
+              "    if (res.code === 401 && res.headers.has('DPoP-Nonce')) {",
+              "        const nonce = res.headers.get('DPoP-Nonce');",
+              "        const url = pm.variables.replaceIn(pm.request.url.toString());",
+              "        const htu = url.split('?')[0].split('#')[0];",
+              "        const bodyStr = pm.variables.replaceIn(pm.request.body.raw);",
+              "        const proof = await sign(pm.request.method, htu, nonce);",
+              "        res = await post(url, { 'DPoP': proof, 'Content-Type': 'application/json' }, bodyStr);",
+              "    }",
+              "    pm.test('Status 401 (refresh revoked)', () => pm.expect(res.code).to.equal(401));",
+              "}",
+              "await run();"
             ]}}
           ],
           "request": {
