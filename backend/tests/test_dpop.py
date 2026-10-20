@@ -14,9 +14,10 @@ from app.auth.dpop import (
     DpopInvalidProof,
     DpopJktMismatch,
     DpopReplay,
+    DpopNonceRequired,
     verify_dpop_proof,
 )
-
+from app.auth.nonce import issue_nonce
 
 # --- fixtures ---------------------------------------------------------
 
@@ -52,17 +53,18 @@ def _sign(
     iat: int | None = None,
     jti: str | None = None,
     typ: str = "dpop+jwt",
-    alg: str = "ES256",
+    nonce: str | None = None,
     extra_claims: dict | None = None,
 ) -> str:
-    """Build and sign a DPoP proof with the given claims."""
-    header = {"typ": typ, "alg": alg, "jwk": jwk}
+    header = {"typ": typ, "alg": "ES256", "jwk": jwk}
     payload = {
         "jti": jti if jti is not None else str(uuid.uuid4()),
         "htm": htm,
         "htu": htu,
         "iat": iat if iat is not None else int(time.time()),
     }
+    if nonce is not None:
+        payload["nonce"] = nonce
     if extra_claims:
         payload.update(extra_claims)
     return jwt.encode(payload, private_key, algorithm="ES256", headers=header)
@@ -319,3 +321,116 @@ async def test_broken_proof_does_not_burn_jti(redis_client, keypair):
         expected_jkt=None,
         redis_client=redis_client,
     )
+
+
+# --- nonce integration ------------------------------------------------
+
+
+async def test_nonce_required_when_missing(redis_client, keypair):
+    private_key, jwk = keypair
+    proof = _sign(private_key, jwk)
+
+    with pytest.raises(DpopNonceRequired) as exc_info:
+        await verify_dpop_proof(
+            proof,
+            expected_htm="POST",
+            expected_htu="https://host/api/v1/auth/login/client",
+            expected_jkt=None,
+            redis_client=redis_client,
+            require_nonce=True,
+        )
+
+    fresh = exc_info.value.nonce
+    assert fresh
+    assert await redis_client.get(f"dpop:nonce:{fresh}") is not None
+
+
+async def test_valid_nonce_accepted_and_consumed(redis_client, keypair):
+    private_key, jwk = keypair
+    nonce = await issue_nonce(redis_client)
+    proof = _sign(private_key, jwk, nonce=nonce)
+
+    thumbprint = await verify_dpop_proof(
+        proof,
+        expected_htm="POST",
+        expected_htu="https://host/api/v1/auth/login/client",
+        expected_jkt=None,
+        redis_client=redis_client,
+        require_nonce=True,
+    )
+    assert thumbprint
+    assert await redis_client.get(f"dpop:nonce:{nonce}") is None
+
+
+async def test_nonce_reuse_rejected(redis_client, keypair):
+    private_key, jwk = keypair
+    nonce = await issue_nonce(redis_client)
+
+    first = _sign(private_key, jwk, nonce=nonce, jti="jti-first")
+    await verify_dpop_proof(
+        first,
+        expected_htm="POST",
+        expected_htu="https://host/api/v1/auth/login/client",
+        expected_jkt=None,
+        redis_client=redis_client,
+        require_nonce=True,
+    )
+
+    second = _sign(private_key, jwk, nonce=nonce, jti="jti-second")
+    with pytest.raises(DpopNonceRequired):
+        await verify_dpop_proof(
+            second,
+            expected_htm="POST",
+            expected_htu="https://host/api/v1/auth/login/client",
+            expected_jkt=None,
+            redis_client=redis_client,
+            require_nonce=True,
+        )
+
+
+async def test_unknown_nonce_rejected(redis_client, keypair):
+    private_key, jwk = keypair
+    proof = _sign(private_key, jwk, nonce="never-issued")
+
+    with pytest.raises(DpopNonceRequired):
+        await verify_dpop_proof(
+            proof,
+            expected_htm="POST",
+            expected_htu="https://host/api/v1/auth/login/client",
+            expected_jkt=None,
+            redis_client=redis_client,
+            require_nonce=True,
+        )
+
+
+async def test_missing_nonce_does_not_burn_jti(redis_client, keypair):
+    private_key, jwk = keypair
+    jti = "jti-must-survive"
+    proof = _sign(private_key, jwk, jti=jti)
+
+    with pytest.raises(DpopNonceRequired):
+        await verify_dpop_proof(
+            proof,
+            expected_htm="POST",
+            expected_htu="https://host/api/v1/auth/login/client",
+            expected_jkt=None,
+            redis_client=redis_client,
+            require_nonce=True,
+        )
+
+    assert await redis_client.get(f"dpop:jti:{jti}") is None
+
+
+async def test_nonce_ignored_when_not_required(redis_client, keypair):
+    private_key, jwk = keypair
+    proof = _sign(private_key, jwk, nonce="garbage-value")
+
+    thumbprint = await verify_dpop_proof(
+        proof,
+        expected_htm="POST",
+        expected_htu="https://host/api/v1/auth/login/client",
+        expected_jkt=None,
+        redis_client=redis_client,
+        require_nonce=False,
+    )
+    assert thumbprint

@@ -8,6 +8,8 @@ import jwt
 import redis.asyncio as redis
 from jwt.algorithms import ECAlgorithm
 
+from app.auth.nonce import consume_nonce, issue_nonce
+
 ALLOWED_KTY = "EC"
 ALLOWED_CRV = "P-256"
 
@@ -48,6 +50,18 @@ class DpopReplay(DpopError):
 
 class DpopJktMismatch(DpopError):
     """The proof's key does not match the expected thumbprint."""
+
+
+class DpopNonceRequired(DpopError):
+    """The server requires a nonce in the proof; a fresh one is attached.
+
+    Attributes:
+        nonce: A freshly issued nonce value, ready for ``DPoP-Nonce``.
+    """
+
+    def __init__(self, nonce: str) -> None:
+        self.nonce = nonce
+        super().__init__("use_dpop_nonce")
 
 
 def _b64url(data: bytes) -> str:
@@ -203,6 +217,7 @@ async def verify_dpop_proof(
     expected_htu: str,
     expected_jkt: str | None,
     redis_client: redis.Redis,
+    require_nonce: bool = False,
     iat_window_seconds: int = DEFAULT_IAT_WINDOW_SECONDS,
     jti_ttl_seconds: int = DEFAULT_JTI_TTL_SECONDS,
 ) -> str:
@@ -234,6 +249,9 @@ async def verify_dpop_proof(
             caller to bind into the new tokens. When set (refresh /
             logout), it is compared against the proof's thumbprint.
         redis_client: Redis client used for replay protection.
+        require_nonce: When ``require_nonce`` is ``True``, 
+            the proof must carry a ``nonce``
+            claim whose value is present in Redis.
         iat_window_seconds: Accepted clock skew in either direction.
         jti_ttl_seconds: How long a used ``jti`` is remembered.
 
@@ -285,6 +303,15 @@ async def verify_dpop_proof(
 
     if claims.get("jti") != jti:
         raise DpopInvalidProof("jti")
+
+    if require_nonce:
+        proof_nonce = claims.get("nonce")
+        if not isinstance(proof_nonce, str) or not proof_nonce:
+            fresh = await issue_nonce(redis_client)
+            raise DpopNonceRequired(fresh)
+        if not await consume_nonce(redis_client, proof_nonce):
+            fresh = await issue_nonce(redis_client)
+            raise DpopNonceRequired(fresh)
 
     stored = await redis_client.set(
         f"{_JTI_KEY_PREFIX}{jti}",
