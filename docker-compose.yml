@@ -71,7 +71,7 @@ services:
       start_period: 10s
 
   rustfs-init:
-    image: rustfs/rc:1.0.0
+    image: rustfs/rc:latest
     container_name: boardgame_rustfs_init
     restart: "no"
     cap_drop:
@@ -133,7 +133,7 @@ services:
 
   migrate:
     build:
-      context: ./backend
+      context: ./services/backend
       dockerfile: Dockerfile
       target: runtime
     container_name: boardgame_migrate
@@ -160,7 +160,7 @@ services:
 
   backend:
     build:
-      context: ./backend
+      context: ./services/backend
       dockerfile: Dockerfile
       target: runtime
     container_name: boardgame_backend
@@ -220,7 +220,7 @@ services:
 
   backend-test:
     build:
-      context: ./backend
+      context: ./services/backend
       dockerfile: Dockerfile
       target: test
     container_name: boardgame_backend_test

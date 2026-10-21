@@ -52,6 +52,22 @@ async def _truncate_all(session: AsyncSession) -> None:
     await session.commit()
 
 
+async def _flush_redis(client) -> None:
+    """Delete every key in the current Redis DB without using FLUSHDB.
+
+    FLUSHDB is forbidden for app_user (it lives in @dangerous), so we
+    iterate with SCAN and delete in batches with UNLINK (non-blocking).
+    """
+    batch: list[str] = []
+    async for key in client.scan_iter(match="*", count=1000):
+        batch.append(key)
+        if len(batch) >= 1000:
+            await client.unlink(*batch)
+            batch.clear()
+    if batch:
+        await client.unlink(*batch)
+
+
 @pytest_asyncio.fixture
 async def session() -> AsyncSession:
     """Yield a clean AsyncSession for a single test.
@@ -66,13 +82,9 @@ async def session() -> AsyncSession:
 
 @pytest_asyncio.fixture
 async def redis_client():
-    """Yield a Redis client pointing at the test DB, emptied first.
-
-    Assumes REDIS_URL points at a database dedicated to tests — the
-    fixture runs FLUSHDB, which wipes whatever is in that DB.
-    """
+    """Yield a Redis client pointing at the test DB, emptied first."""
     client = build_redis()
-    await client.flushdb()
+    await _flush_redis(client)
     try:
         yield client
     finally:
