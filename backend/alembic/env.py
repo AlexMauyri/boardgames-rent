@@ -6,13 +6,13 @@ migrations and the running application cannot diverge.
 
 import asyncio
 from logging.config import fileConfig
+import os
 
 from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from app.config import settings
 from app.db.base import Base
 
 from app.db import models
@@ -30,10 +30,16 @@ AUTOGENERATE_OPTS: dict[str, object] = {
 }
 
 
+DATABASE_URL = (
+    f"postgresql+asyncpg://{os.environ['POSTGRES_USER']}:{os.environ['POSTGRES_PASSWORD']}"
+    f"@{os.environ['POSTGRES_HOST']}:{os.environ['POSTGRES_PORT']}/{os.environ['POSTGRES_DB']}"
+)
+
+
 def run_migrations_offline() -> None:
     """Emit SQL to stdout without connecting. Stays synchronous."""
     context.configure(
-        url=settings.database_url,
+        url=DATABASE_URL,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -60,7 +66,7 @@ def do_run_migrations(connection: Connection) -> None:
 
 async def run_async_migrations() -> None:
     connectable = create_async_engine(
-        settings.database_url,
+        DATABASE_URL,
         poolclass=pool.NullPool,
     )
     try:

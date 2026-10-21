@@ -1,5 +1,7 @@
 # Python
 __pycache__/
+.python-version
+README.md
 
 # Virtual envs
 .venv/
