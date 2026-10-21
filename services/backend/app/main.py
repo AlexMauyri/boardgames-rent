@@ -9,6 +9,7 @@ from app.api.v1.router import api_router
 from app.cache.client import bootstrap_redis
 from app.storage.client import bootstrap_storage
 from app.logging_config import setup_logging
+from app.middleware.rate_limit import RateLimitMiddleware
 
 
 @asynccontextmanager
@@ -25,6 +26,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(RateLimitMiddleware) 
 app.include_router(api_router)
 register_exception_handlers(app)
 

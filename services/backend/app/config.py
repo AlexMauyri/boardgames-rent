@@ -5,8 +5,25 @@ Lowest-level module in the backend — must not import from `app/`.
 All configuration is sourced from environment variables / `.env`.
 """
 
-from pydantic import Field
+from pydantic import Field, BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class RateLimitRule(BaseModel):
+    """A single rate-limit rule."""
+
+    limit: int = Field(gt=0)
+    window: int = Field(gt=0, description="Window in seconds")
+
+
+_DEFAULT_RULES: dict[str, RateLimitRule] = {
+    "/api/v1/auth/login":    RateLimitRule(limit=10,   window=100),
+    "/api/v1/auth/register": RateLimitRule(limit=3,   window=3600),
+    "/api/v1/auth/refresh":  RateLimitRule(limit=30,  window=60),
+    "/api/v1/auth/logout":   RateLimitRule(limit=10,  window=60),
+    "/api/v1/orders":        RateLimitRule(limit=10,  window=3600),
+    "/api/v1/catalog":       RateLimitRule(limit=120, window=60),
+}
 
 
 class Settings(BaseSettings):
@@ -55,6 +72,11 @@ class Settings(BaseSettings):
     )
     dpop_require_nonce: bool = Field(
         default=True, alias="DPOP_REQUIRE_NONCE",
+    )
+
+    rate_limit_rules: dict[str, RateLimitRule] = Field(
+        default_factory=lambda: dict(_DEFAULT_RULES),
+        description="Per-prefix rate-limit rules. Override via RATE_LIMIT_RULES JSON.",
     )
 
     @property
