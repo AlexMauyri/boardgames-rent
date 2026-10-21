@@ -1,14 +1,15 @@
 """CRUD for clients."""
 
+from typing import Any
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud.base import CRUDBase
 from app.db.models import Client
-from app.schemas import ClientCreate, ClientUpdate
 
 
-class CRUDClient(CRUDBase[Client, ClientCreate, ClientUpdate]):
+class CRUDClient(CRUDBase[Client]):
     """CRUD operations for clients."""
 
     async def get_by_email(
@@ -16,15 +17,7 @@ class CRUDClient(CRUDBase[Client, ClientCreate, ClientUpdate]):
         session: AsyncSession,
         email: str,
     ) -> Client | None:
-        """Fetch a client by exact email.
-
-        Args:
-            session: Active async session.
-            email: Exact, case-sensitive email address.
-
-        Returns:
-            The matching client, or None.
-        """
+        """Fetch a client by exact email."""
         stmt = select(Client).where(Client.email == email)
         result = await session.execute(stmt)
         return result.scalar_one_or_none()
@@ -33,45 +26,33 @@ class CRUDClient(CRUDBase[Client, ClientCreate, ClientUpdate]):
         self,
         session: AsyncSession,
         *,
-        data: ClientCreate,
+        data: dict[str, Any],
         password_hash: str,
     ) -> Client:
         """Insert a client with a pre-computed password hash.
 
         Args:
             session: Active async session.
-            data: Validated creation payload.
+            data: Column values of the client (without ``password``; the
+                service layer strips it).
             password_hash: Pre-computed argon2 digest.
 
         Returns:
             The flushed and refreshed client.
+
+        Raises:
+            ValueError: ``data`` contains an unknown column.
         """
-        obj = Client(
-            email=data.email,
-            password_hash=password_hash,
-            full_name=data.full_name,
-            phone=data.phone,
-        )
+        payload = {**data, "password_hash": password_hash}
+        self._validate_columns(payload)
+        obj = Client(**payload)
         session.add(obj)
         await session.flush()
         await session.refresh(obj)
         return obj
 
-    async def activate(
-        self,
-        session: AsyncSession,
-        *,
-        id: int,
-    ) -> Client | None:
-        """Set `is_active` to True.
-
-        Args:
-            session: Active async session.
-            id: Primary key of the client.
-
-        Returns:
-            The activated client, or None if no row has that id.
-        """
+    async def activate(self, session: AsyncSession, *, id: int) -> Client | None:
+        """Set ``is_active`` to True."""
         obj = await self.get(session, id)
         if obj is None:
             return None
@@ -79,21 +60,8 @@ class CRUDClient(CRUDBase[Client, ClientCreate, ClientUpdate]):
         await session.flush()
         return obj
 
-    async def deactivate(
-        self,
-        session: AsyncSession,
-        *,
-        id: int,
-    ) -> Client | None:
-        """Set `is_active` to False.
-
-        Args:
-            session: Active async session.
-            id: Primary key of the client.
-
-        Returns:
-            The deactivated client, or None if no row has that id.
-        """
+    async def deactivate(self, session: AsyncSession, *, id: int) -> Client | None:
+        """Set ``is_active`` to False."""
         obj = await self.get(session, id)
         if obj is None:
             return None

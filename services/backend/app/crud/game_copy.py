@@ -8,10 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.crud.base import CRUDBase
 from app.crud.order import OPEN_STATUSES
 from app.db.models import GameCopy, Order, OrderItem
-from app.schemas import GameCopyCreate, GameCopyUpdate
 
 
-class CRUDGameCopy(CRUDBase[GameCopy, GameCopyCreate, GameCopyUpdate]):
+class CRUDGameCopy(CRUDBase[GameCopy]):
     """CRUD operations for game copies."""
 
     async def get_by_inventory_number(
@@ -19,15 +18,7 @@ class CRUDGameCopy(CRUDBase[GameCopy, GameCopyCreate, GameCopyUpdate]):
         session: AsyncSession,
         inventory_number: str,
     ) -> GameCopy | None:
-        """Fetch a copy by its barcode label.
-
-        Args:
-            session: Active async session.
-            inventory_number: Exact inventory number.
-
-        Returns:
-            The matching copy, or None.
-        """
+        """Fetch a copy by its barcode label."""
         stmt = select(GameCopy).where(
             GameCopy.inventory_number == inventory_number
         )
@@ -39,15 +30,7 @@ class CRUDGameCopy(CRUDBase[GameCopy, GameCopyCreate, GameCopyUpdate]):
         session: AsyncSession,
         id: int,
     ) -> GameCopy | None:
-        """Fetch a copy and lock its row until the transaction ends.
-
-        Args:
-            session: Active async session.
-            id: Primary key of the copy.
-
-        Returns:
-            The freshly read copy, or None if no row has that id.
-        """
+        """Fetch a copy and lock its row until the transaction ends."""
         stmt = (
             select(GameCopy)
             .where(GameCopy.id == id)
@@ -67,20 +50,7 @@ class CRUDGameCopy(CRUDBase[GameCopy, GameCopyCreate, GameCopyUpdate]):
         skip: int = 0,
         limit: int = 100,
     ) -> list[GameCopy]:
-        """List copies matching the given filters, id-ascending.
-
-        Args:
-            session: Active async session.
-            game_id: Keep copies of this catalog game. None disables it.
-            point_id: Keep copies currently at this pickup point. None
-                disables it.
-            status: Keep copies in this status. None disables it.
-            skip: Rows to skip.
-            limit: Maximum rows to return.
-
-        Returns:
-            Matching rows; empty list if none match.
-        """
+        """List copies matching the given filters, id-ascending."""
         stmt = select(GameCopy)
         if game_id is not None:
             stmt = stmt.where(GameCopy.game_id == game_id)
@@ -99,17 +69,7 @@ class CRUDGameCopy(CRUDBase[GameCopy, GameCopyCreate, GameCopyUpdate]):
         *,
         lock: bool = False,
     ) -> list[GameCopy]:
-        """List boxes of the given games that are physically on a shelf.
-
-        Args:
-            session: Active async session.
-            game_ids: Catalog games to look for.
-            lock: When True, `SELECT ... FOR UPDATE` the rows (in id order, so
-                concurrent callers cannot deadlock) until the transaction ends.
-
-        Returns:
-            Copies with status AVAILABLE, id-ascending; empty if none.
-        """
+        """List boxes of the given games that are physically on a shelf."""
         if not game_ids:
             return []
         stmt = (
@@ -131,18 +91,7 @@ class CRUDGameCopy(CRUDBase[GameCopy, GameCopyCreate, GameCopyUpdate]):
         session: AsyncSession,
         game_ids: Collection[int],
     ) -> dict[tuple[int, int], int]:
-        """Count free boxes per game and pickup point.
-
-        A box is free when it is on a shelf and no open order holds it.
-
-        Args:
-            session: Active async session.
-            game_ids: Catalog games to count.
-
-        Returns:
-            Counts keyed by `(game_id, point_id)`; combinations with no free
-            box are absent.
-        """
+        """Count free boxes per game and pickup point."""
         if not game_ids:
             return {}
         held = (
@@ -169,16 +118,7 @@ class CRUDGameCopy(CRUDBase[GameCopy, GameCopyCreate, GameCopyUpdate]):
         *,
         lock: bool = False,
     ) -> list[GameCopy]:
-        """List the boxes included in an order.
-
-        Args:
-            session: Active async session.
-            order_id: Primary key of the order.
-            lock: When True, lock the copy rows until the transaction ends.
-
-        Returns:
-            The order's copies, id-ascending; empty if none.
-        """
+        """List the boxes included in an order."""
         stmt = (
             select(GameCopy)
             .join(OrderItem, OrderItem.game_copy_id == GameCopy.id)

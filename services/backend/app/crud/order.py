@@ -4,14 +4,12 @@ from collections.abc import Collection
 from decimal import Decimal
 from typing import Any
 
-from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.crud.base import CRUDBase
 from app.db.models import Order, OrderItem
-from app.schemas import OrderCreate
 
 OPEN_STATUSES = (
     "CREATED",
@@ -22,7 +20,7 @@ OPEN_STATUSES = (
 )
 
 
-class CRUDOrder(CRUDBase[Order, OrderCreate, BaseModel]):
+class CRUDOrder(CRUDBase[Order]):
     """CRUD operations for orders.
 
     Orders have no generic update schema: their fields change only through
@@ -34,15 +32,7 @@ class CRUDOrder(CRUDBase[Order, OrderCreate, BaseModel]):
         session: AsyncSession,
         id: int,
     ) -> Order | None:
-        """Fetch an order with its lines eagerly loaded and freshly read.
-
-        Args:
-            session: Active async session.
-            id: Primary key of the order.
-
-        Returns:
-            The order with `items` populated, or None if no row has that id.
-        """
+        """Fetch an order with its lines eagerly loaded and freshly read."""
         stmt = (
             select(Order)
             .options(selectinload(Order.items))
@@ -57,15 +47,7 @@ class CRUDOrder(CRUDBase[Order, OrderCreate, BaseModel]):
         session: AsyncSession,
         id: int,
     ) -> Order | None:
-        """Fetch an order and lock its row until the transaction ends.
-
-        Args:
-            session: Active async session.
-            id: Primary key of the order.
-
-        Returns:
-            The freshly read order, or None if no row has that id.
-        """
+        """Fetch an order and lock its row until the transaction ends."""
         stmt = (
             select(Order)
             .where(Order.id == id)
@@ -83,17 +65,7 @@ class CRUDOrder(CRUDBase[Order, OrderCreate, BaseModel]):
         skip: int = 0,
         limit: int = 100,
     ) -> list[Order]:
-        """List a client's orders, newest first.
-
-        Args:
-            session: Active async session.
-            client_id: Primary key of the client.
-            skip: Rows to skip.
-            limit: Maximum rows to return.
-
-        Returns:
-            Matching orders without their lines; empty list if none.
-        """
+        """List a client's orders, newest first."""
         stmt = (
             select(Order)
             .where(Order.client_id == client_id)
@@ -113,18 +85,7 @@ class CRUDOrder(CRUDBase[Order, OrderCreate, BaseModel]):
         skip: int = 0,
         limit: int = 100,
     ) -> list[Order]:
-        """List orders collected at a pickup point, newest first.
-
-        Args:
-            session: Active async session.
-            point_id: Primary key of the pickup point.
-            status: Keep only orders in this status. None disables it.
-            skip: Rows to skip.
-            limit: Maximum rows to return.
-
-        Returns:
-            Matching orders without their lines; empty list if none.
-        """
+        """List orders collected at a pickup point, newest first."""
         stmt = select(Order).where(Order.pickup_point_id == point_id)
         if status is not None:
             stmt = stmt.where(Order.status == status)
@@ -137,15 +98,7 @@ class CRUDOrder(CRUDBase[Order, OrderCreate, BaseModel]):
         session: AsyncSession,
         copy_ids: Collection[int],
     ) -> set[int]:
-        """Find which of the given boxes already belong to an open order.
-
-        Args:
-            session: Active async session.
-            copy_ids: Candidate game copy ids.
-
-        Returns:
-            The subset held by an order in an open status.
-        """
+        """Find which of the given boxes already belong to an open order."""
         if not copy_ids:
             return set()
         stmt = (
@@ -166,17 +119,8 @@ class CRUDOrder(CRUDBase[Order, OrderCreate, BaseModel]):
         values: dict[str, Any],
         items: list[tuple[int, Decimal]],
     ) -> Order:
-        """Insert an order together with its lines in one flush.
-
-        Args:
-            session: Active async session.
-            values: Column values of the order itself.
-            items: `(game_copy_id, price_at_rental)` pairs, one per box.
-
-        Returns:
-            The flushed order. Server-generated columns are not yet loaded;
-            re-read it with `get_detail` before serialising.
-        """
+        """Insert an order together with its lines in one flush."""
+        self._validate_columns(values)
         obj = Order(**values)
         obj.items = [
             OrderItem(game_copy_id=copy_id, price_at_rental=price)

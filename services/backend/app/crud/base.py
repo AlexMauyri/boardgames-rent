@@ -3,18 +3,15 @@
 from collections.abc import Collection
 from typing import Any, Generic, TypeVar
 
-from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.base import Base
 
 ModelT = TypeVar("ModelT", bound=Base)
-CreateT = TypeVar("CreateT", bound=BaseModel)
-UpdateT = TypeVar("UpdateT", bound=BaseModel)
 
 
-class CRUDBase(Generic[ModelT, CreateT, UpdateT]):
+class CRUDBase(Generic[ModelT]):
     """Generic CRUD operations over a single SQLAlchemy model."""
 
     def __init__(self, model: type[ModelT]) -> None:
@@ -33,16 +30,23 @@ class CRUDBase(Generic[ModelT, CreateT, UpdateT]):
         """
         return {attr.key for attr in self.model.__mapper__.column_attrs}
 
-    async def get(self, session: AsyncSession, id: int) -> ModelT | None:
-        """Fetch a row by primary key.
+    def _validate_columns(self, data: dict[str, Any]) -> None:
+        """Reject dict keys that are not mapped columns.
 
         Args:
-            session: Active async session.
-            id: Primary key value.
+            data: Column values keyed by attribute name.
 
-        Returns:
-            The row, or None if no row has that id.
+        Raises:
+            ValueError: `data` contains an unknown key.
         """
+        unknown = set(data) - self._column_keys()
+        if unknown:
+            raise ValueError(
+                f"Unknown columns for {self.model.__name__}: {sorted(unknown)}"
+            )
+
+    async def get(self, session: AsyncSession, id: int) -> ModelT | None:
+        """Fetch a row by primary key."""
         return await session.get(self.model, id)
 
     async def get_many(
@@ -50,15 +54,7 @@ class CRUDBase(Generic[ModelT, CreateT, UpdateT]):
         session: AsyncSession,
         ids: Collection[int],
     ) -> list[ModelT]:
-        """Fetch several rows by primary key in one query, id-ascending.
-
-        Args:
-            session: Active async session.
-            ids: Primary key values. Duplicates are harmless.
-
-        Returns:
-            The rows that exist; ids with no row are silently absent.
-        """
+        """Fetch several rows by primary key in one query, id-ascending."""
         if not ids:
             return []
         stmt = (
@@ -76,16 +72,7 @@ class CRUDBase(Generic[ModelT, CreateT, UpdateT]):
         skip: int = 0,
         limit: int = 100,
     ) -> list[ModelT]:
-        """List rows, id-ascending.
-
-        Args:
-            session: Active async session.
-            skip: Rows to skip.
-            limit: Maximum rows to return.
-
-        Returns:
-            Matching rows; empty list if none.
-        """
+        """List rows, id-ascending."""
         stmt = (
             select(self.model)
             .order_by(self.model.id)
@@ -101,23 +88,8 @@ class CRUDBase(Generic[ModelT, CreateT, UpdateT]):
         *,
         data: dict[str, Any],
     ) -> ModelT:
-        """Insert a row from a plain dict of column values.
-
-        Args:
-            session: Active async session.
-            data: Column values keyed by mapped attribute name.
-
-        Returns:
-            The flushed row.
-
-        Raises:
-            ValueError: `data` contains a key that is not a mapped column.
-        """
-        unknown = set(data) - self._column_keys()
-        if unknown:
-            raise ValueError(
-                f"Unknown columns for {self.model.__name__}: {sorted(unknown)}"
-            )
+        """Insert a row from a plain dict of column values."""
+        self._validate_columns(data)
         obj = self.model(**data)
         session.add(obj)
         await session.flush()
@@ -130,44 +102,18 @@ class CRUDBase(Generic[ModelT, CreateT, UpdateT]):
         id: int,
         data: dict[str, Any],
     ) -> ModelT | None:
-        """Apply a partial update to a row.
-
-        Args:
-            session: Active async session.
-            id: Primary key of the row to update.
-            data: Column values to set, keyed by mapped attribute name.
-
-        Returns:
-            The flushed row, or None if no row has that id.
-
-        Raises:
-            ValueError: `data` contains a key that is not a mapped column.
-        """
+        """Apply a partial update to a row."""
         obj = await self.get(session, id)
         if obj is None:
             return None
-
-        unknown = set(data) - self._column_keys()
-        if unknown:
-            raise ValueError(
-                f"Unknown columns for {self.model.__name__}: {sorted(unknown)}"
-            )
-
+        self._validate_columns(data)
         for key, value in data.items():
             setattr(obj, key, value)
         await session.flush()
         return obj
 
     async def delete(self, session: AsyncSession, *, id: int) -> bool:
-        """Delete a row by primary key.
-
-        Args:
-            session: Active async session.
-            id: Primary key of the row to delete.
-
-        Returns:
-            True if a row was deleted, False if no row had that id.
-        """
+        """Delete a row by primary key."""
         obj = await self.get(session, id)
         if obj is None:
             return False

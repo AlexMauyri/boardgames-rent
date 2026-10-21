@@ -15,20 +15,14 @@ async def add_new_game_to_catalog(
     session: AsyncSession,
     data: BoardGameCreate,
 ) -> BoardGameRead:
-    """Add a new game to the catalog.
-
-    Args:
-        session: Active async session.
-        data: Validated creation payload, including `category_ids`.
-
-    Returns:
-        The created game.
-
-    Raises:
-        ServiceValueError: One or more `category_ids` do not exist.
-    """
+    """Add a new game to the catalog."""
+    scalar_data = data.model_dump(exclude={"category_ids"})
     try:
-        obj = await board_game.create_with_categories(session, data=data)
+        obj = await board_game.create_with_categories(
+            session,
+            data=scalar_data,
+            category_ids=data.category_ids,
+        )
     except ValueError as exc:
         logger.warning(
             "game creation rejected title=%s reason=unknown_category_ids",
@@ -50,21 +44,7 @@ async def update_game(
     game_id: int,
     data: BoardGameUpdate,
 ) -> BoardGameRead:
-    """Update a board game.
-
-    Args:
-        session: Active async session.
-        game_id: Primary key of the board game.
-        data: Partial update payload; unset fields are left alone.
-
-    Returns:
-        The updated game.
-
-    Raises:
-        NotFoundError: No board game with that id.
-        ServiceValueError: `data` is inconsistent against the current row, or
-            `category_ids` is present and contains unknown ids.
-    """
+    """Update a board game."""
     game = await board_game.get_with_categories(session, game_id)
     if game is None:
         raise NotFoundError("BoardGame", game_id)
@@ -78,9 +58,19 @@ async def update_game(
         )
         raise ServiceValueError(str(exc)) from exc
 
+    scalar_data = data.model_dump(exclude_unset=True, exclude={"category_ids"})
+    category_ids: list[int] | None = (
+        data.category_ids or []
+        if "category_ids" in data.model_fields_set
+        else None
+    )
+
     try:
         obj = await board_game.update_with_categories(
-            session, id=game_id, data=data,
+            session,
+            id=game_id,
+            data=scalar_data,
+            category_ids=category_ids,
         )
     except ValueError as exc:
         logger.warning(

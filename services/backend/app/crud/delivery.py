@@ -1,15 +1,13 @@
 """CRUD for courier deliveries."""
 
-from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud.base import CRUDBase
 from app.db.models import Delivery
-from app.schemas import DeliveryCreate
 
 
-class CRUDDelivery(CRUDBase[Delivery, DeliveryCreate, BaseModel]):
+class CRUDDelivery(CRUDBase[Delivery]):
     """CRUD operations for deliveries.
 
     Deliveries have no generic update schema: their fields change only
@@ -21,15 +19,7 @@ class CRUDDelivery(CRUDBase[Delivery, DeliveryCreate, BaseModel]):
         session: AsyncSession,
         id: int,
     ) -> Delivery | None:
-        """Fetch a delivery and lock its row until the transaction ends.
-
-        Args:
-            session: Active async session.
-            id: Primary key of the delivery.
-
-        Returns:
-            The freshly read delivery, or None if no row has that id.
-        """
+        """Fetch a delivery and lock its row until the transaction ends."""
         stmt = (
             select(Delivery)
             .where(Delivery.id == id)
@@ -46,16 +36,7 @@ class CRUDDelivery(CRUDBase[Delivery, DeliveryCreate, BaseModel]):
         *,
         for_update: bool = False,
     ) -> Delivery | None:
-        """Fetch the delivery serving an order.
-
-        Args:
-            session: Active async session.
-            order_id: Primary key of the order.
-            for_update: When True, lock the row until the transaction ends.
-
-        Returns:
-            The delivery, or None if the order needs no transfer.
-        """
+        """Fetch the delivery serving an order."""
         stmt = (
             select(Delivery)
             .where(Delivery.order_id == order_id)
@@ -73,16 +54,7 @@ class CRUDDelivery(CRUDBase[Delivery, DeliveryCreate, BaseModel]):
         skip: int = 0,
         limit: int = 100,
     ) -> list[Delivery]:
-        """List tasks no courier has accepted yet, oldest first.
-
-        Args:
-            session: Active async session.
-            skip: Rows to skip.
-            limit: Maximum rows to return.
-
-        Returns:
-            Deliveries with status CREATED; empty list if none.
-        """
+        """List tasks no courier has accepted yet, oldest first."""
         stmt = (
             select(Delivery)
             .where(
@@ -105,18 +77,7 @@ class CRUDDelivery(CRUDBase[Delivery, DeliveryCreate, BaseModel]):
         skip: int = 0,
         limit: int = 100,
     ) -> list[Delivery]:
-        """List a courier's tasks, oldest first.
-
-        Args:
-            session: Active async session.
-            courier_id: Primary key of the courier.
-            active_only: When True, only ACCEPTED and IN_TRANSIT tasks.
-            skip: Rows to skip.
-            limit: Maximum rows to return.
-
-        Returns:
-            Matching deliveries; empty list if none.
-        """
+        """List a courier's tasks, oldest first."""
         stmt = select(Delivery).where(Delivery.courier_id == courier_id)
         if active_only:
             stmt = stmt.where(Delivery.status.in_(("ACCEPTED", "IN_TRANSIT")))

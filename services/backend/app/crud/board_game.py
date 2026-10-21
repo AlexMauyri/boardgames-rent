@@ -8,27 +8,13 @@ from sqlalchemy.orm import selectinload
 
 from app.crud.base import CRUDBase
 from app.db.models import BoardGame, Category
-from app.schemas import BoardGameCreate, BoardGameUpdate
 
 
 async def _load_categories(
     session: AsyncSession,
     category_ids: list[int],
 ) -> list[Category]:
-    """Load the categories with the given ids, one query, deduplicated.
-
-    Args:
-        session: Active async session.
-        category_ids: Category primary keys to resolve. Duplicates are
-            collapsed; order is not preserved.
-
-    Returns:
-        The matching categories. Empty list when `category_ids` is empty.
-
-    Raises:
-        ValueError: One or more ids in `category_ids` do not exist. The
-            message lists the missing ids in sorted order.
-    """
+    """Load the categories with the given ids, one query, deduplicated."""
     unique_ids = set(category_ids)
     if not unique_ids:
         return []
@@ -47,25 +33,11 @@ async def set_categories(
     game: BoardGame,
     category_ids: list[int],
 ) -> None:
-    """Replace a game's full category set.
-
-    Args:
-        session: Active async session.
-        game: The board game whose categories are being replaced. Must be
-            either pending (not yet flushed) or loaded with
-            `selectinload(BoardGame.categories)`. On a persistent instance
-            whose collection was never loaded, the unit of work cannot
-            compute the diff and `lazy="raise"` will not fetch it implicitly.
-        category_ids: The complete desired set of category ids.
-
-    Raises:
-        ValueError: One or more ids in `category_ids` do not exist.
-    """
-    
+    """Replace a game's full category set."""
     game.categories = await _load_categories(session, category_ids)
 
 
-class CRUDBoardGame(CRUDBase[BoardGame, BoardGameCreate, BoardGameUpdate]):
+class CRUDBoardGame(CRUDBase[BoardGame]):
     """CRUD operations for board games."""
 
     async def get_with_categories(
@@ -73,15 +45,7 @@ class CRUDBoardGame(CRUDBase[BoardGame, BoardGameCreate, BoardGameUpdate]):
         session: AsyncSession,
         id: int,
     ) -> BoardGame | None:
-        """Fetch a board game with its categories eagerly loaded.
-
-        Args:
-            session: Active async session.
-            id: Primary key of the board game.
-
-        Returns:
-            The row with `categories` populated, or None if no row has that id.
-        """
+        """Fetch a board game with its categories eagerly loaded."""
         stmt = (
             select(BoardGame)
             .options(selectinload(BoardGame.categories))
@@ -100,22 +64,7 @@ class CRUDBoardGame(CRUDBase[BoardGame, BoardGameCreate, BoardGameUpdate]):
         skip: int = 0,
         limit: int = 100,
     ) -> list[BoardGame]:
-        """List board games matching catalog filters, id-ascending.
-
-        Args:
-            session: Active async session.
-            players: Keep games whose supported player range includes this
-                count. None disables the filter.
-            playtime_max: Keep games whose average play time is at most this
-                many minutes. None disables the filter.
-            category_id: Keep games linked to this category. None disables
-                the filter.
-            skip: Rows to skip.
-            limit: Maximum rows to return.
-
-        Returns:
-            Matching rows; empty list if none match.
-        """
+        """List board games matching catalog filters, id-ascending."""
         stmt = select(BoardGame)
 
         if players is not None:
@@ -140,23 +89,27 @@ class CRUDBoardGame(CRUDBase[BoardGame, BoardGameCreate, BoardGameUpdate]):
         self,
         session: AsyncSession,
         *,
-        data: BoardGameCreate,
+        data: dict[str, Any],
+        category_ids: list[int],
     ) -> BoardGame:
         """Insert a board game and link it to the given categories.
 
         Args:
             session: Active async session.
-            data: Validated creation payload, including `category_ids`.
+            data: Column values of the game itself (``category_ids`` already
+                stripped by the service layer).
+            category_ids: The categories to link.
 
         Returns:
-            The flushed row with `categories` populated.
+            The flushed row with ``categories`` populated.
 
         Raises:
-            ValueError: One or more `category_ids` do not exist.
+            ValueError: ``data`` contains an unknown column, or one or more
+                ``category_ids`` do not exist.
         """
-        loaded = await _load_categories(session, data.category_ids)
-        payload: dict[str, Any] = data.model_dump(exclude={"category_ids"})
-        game = BoardGame(**payload)
+        self._validate_columns(data)
+        loaded = await _load_categories(session, category_ids)
+        game = BoardGame(**data)
         game.categories = loaded
         session.add(game)
         await session.flush()
@@ -167,40 +120,33 @@ class CRUDBoardGame(CRUDBase[BoardGame, BoardGameCreate, BoardGameUpdate]):
         session: AsyncSession,
         *,
         id: int,
-        data: BoardGameUpdate,
+        data: dict[str, Any],
+        category_ids: list[int] | None,
     ) -> BoardGame | None:
         """Apply a partial update, optionally replacing the category set.
 
         Args:
             session: Active async session.
             id: Primary key of the board game.
-            data: Partial update payload; unset fields are left alone.
+            data: Column values to set (``category_ids`` already stripped).
+            category_ids: ``None`` leaves the set untouched; a list (possibly
+                empty) replaces the current set.
 
         Returns:
-            The flushed row with `categories` populated, or None if no row
-            has that id.
+            The flushed row with ``categories`` populated, or None.
 
         Raises:
-            ValueError: `category_ids` is present and contains unknown ids.
+            ValueError: ``data`` contains an unknown column, or ``category_ids``
+                contains unknown ids.
         """
+        self._validate_columns(data)
         game = await self.get_with_categories(session, id)
         if game is None:
             return None
-
-        scalar_updates = data.model_dump(
-            exclude_unset=True,
-            exclude={"category_ids"},
-        )
-        for key, value in scalar_updates.items():
+        for key, value in data.items():
             setattr(game, key, value)
-
-        if "category_ids" in data.model_fields_set:
-            await set_categories(
-                session,
-                game,
-                data.category_ids or [],
-            )
-
+        if category_ids is not None:
+            await set_categories(session, game, category_ids)
         await session.flush()
         return game
 

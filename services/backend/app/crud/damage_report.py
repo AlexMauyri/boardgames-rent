@@ -1,15 +1,13 @@
 """CRUD for damage reports."""
 
-from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud.base import CRUDBase
 from app.db.models import DamageReport
-from app.schemas import DamageReportCreate
 
 
-class CRUDDamageReport(CRUDBase[DamageReport, DamageReportCreate, BaseModel]):
+class CRUDDamageReport(CRUDBase[DamageReport]):
     """CRUD operations for damage reports.
 
     Reports have no generic update schema: they change only by being
@@ -21,15 +19,7 @@ class CRUDDamageReport(CRUDBase[DamageReport, DamageReportCreate, BaseModel]):
         session: AsyncSession,
         id: int,
     ) -> DamageReport | None:
-        """Fetch a report and lock its row until the transaction ends.
-
-        Args:
-            session: Active async session.
-            id: Primary key of the report.
-
-        Returns:
-            The freshly read report, or None if no row has that id.
-        """
+        """Fetch a report and lock its row until the transaction ends."""
         stmt = (
             select(DamageReport)
             .where(DamageReport.id == id)
@@ -46,16 +36,7 @@ class CRUDDamageReport(CRUDBase[DamageReport, DamageReportCreate, BaseModel]):
         *,
         exclude_id: int | None = None,
     ) -> int:
-        """Count unresolved reports on a box.
-
-        Args:
-            session: Active async session.
-            copy_id: Primary key of the game copy.
-            exclude_id: A report to leave out of the count.
-
-        Returns:
-            The number of reports with no `resolved_at`.
-        """
+        """Count unresolved reports on a box."""
         stmt = select(func.count()).select_from(DamageReport).where(
             DamageReport.game_copy_id == copy_id,
             DamageReport.resolved_at.is_(None),

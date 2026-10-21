@@ -91,7 +91,7 @@ async def create_employee(
     try:
         obj = await employee.create_with_hash(
             session,
-            data=data,
+            data=data.model_dump(exclude={"password"}),
             password_hash=password_hash,
         )
     except IntegrityError as exc:
