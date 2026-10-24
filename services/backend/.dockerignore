@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+.python-version
+README.md
+
+# Virtual envs
+.venv/
+venv/
+
+# Secrets & local config
+.env
+.env.*
+!.env.example
+
+# VCS
+.git/
+.gitignore
+.dockerignore

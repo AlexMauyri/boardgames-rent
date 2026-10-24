@@ -1,0 +1,1433 @@
+{
+  "info": {
+    "name": "Board Game Rental API",
+    "description": "Full collection for the board game rental backend.\n\n**Setup**\n1. `docker compose up -d`\n2. `docker compose run --rm backend python -m scripts.seed --reset --yes`\n\n**DPoP Flow**\nAuth requests send an initial DPoP proof without a nonce. The server responds with a `use_dpop_nonce` challenge. The Test script catches this, signs a new proof with the provided nonce, and retries the request via `pm.sendRequest`. All assertions run against the retry response.\n\n**Run order** — Collection Runner, top to bottom. Variables flow automatically.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {"key": "base_root", "value": "http://localhost"},
+    {"key": "base_url", "value": "http://localhost/api/v1"},
+    {"key": "seed_password", "value": "demo-password"},
+    {"key": "admin_email", "value": "admin@bgrent.io"},
+    {"key": "courier_email", "value": "courier.oleg@bgrent.io"},
+    {"key": "manager_email", "value": "manager.center@bgrent.io"},
+    {"key": "admin_access_token", "value": ""},
+    {"key": "courier_access_token", "value": ""},
+    {"key": "manager_access_token", "value": ""},
+    {"key": "client_email", "value": ""},
+    {"key": "client_password", "value": "secret1"},
+    {"key": "client_id", "value": ""},
+    {"key": "client_access_token", "value": ""},
+    {"key": "refresh_token", "value": ""},
+    {"key": "point_id", "value": ""},
+    {"key": "game_id", "value": ""},
+    {"key": "order_start", "value": ""},
+    {"key": "order_end", "value": ""},
+    {"key": "created_order_id", "value": ""},
+    {"key": "delivery_id", "value": ""},
+    {"key": "manager_ready_order_id", "value": ""},
+    {"key": "manager_ready_copy_id", "value": ""},
+    {"key": "created_damage_report_id", "value": ""},
+    {"key": "created_category_id", "value": ""},
+    {"key": "created_point_id", "value": ""},
+    {"key": "created_game_id", "value": ""},
+    {"key": "created_employee_id", "value": ""},
+    {"key": "created_employee_email", "value": ""},
+    {"key": "created_copy_id", "value": ""},
+    {"key": "created_copy_number", "value": ""},
+    {"key": "cover_file_path", "value": ""},
+    {"key": "dpop_private_jwk", "value": "{\"kty\": \"EC\", \"crv\": \"P-256\", \"x\": \"QmKMTqO3zPYIPOl5jgypsMr70Vl-m8gbIb0xVQS2Tis\", \"y\": \"x0MLLFdb5X_-g_QWnZ22q9UcK98-gRVbGV1Ski4Ha2w\", \"d\": \"LEM_0jUHde0-JzRPgYoOlSJstZwnjBVJSJFuLOachBw\"}"}
+  ],
+  "item": [
+    {
+      "name": "00 - Health",
+      "item": [
+        {
+          "name": "GET /health",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Body is {status: ok}', () => pm.expect(pm.response.json()).to.deep.equal({status: 'ok'}));"
+            ]}}
+          ],
+          "request": {"method": "GET", "header": [], "url": {"raw": "{{base_root}}/health", "host": ["{{base_root}}"], "path": ["health"]}}
+        }
+      ]
+    },
+    {
+      "name": "01 - Auth",
+      "item": [
+        {
+          "name": "Register new client",
+          "event": [
+            {"listen": "prerequest", "script": {"type": "text/javascript", "exec": [
+              "pm.collectionVariables.set('client_email', 'postman-' + pm.variables.replaceIn('{{$guid}}') + '@test.io');"
+            ]}},
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 201', () => pm.response.to.have.status(201));",
+              "const r = pm.response.json();",
+              "pm.test('Has id, email, is_active', () => {",
+              "  pm.expect(r.id).to.be.a('number');",
+              "  pm.expect(r.email).to.eql(pm.collectionVariables.get('client_email'));",
+              "  pm.expect(r.is_active).to.equal(true);",
+              "});",
+              "pm.test('No password_hash leaked', () => pm.expect(r).to.not.have.property('password_hash'));",
+              "pm.collectionVariables.set('client_id', r.id);"
+            ]}}
+          ],
+          "request": {
+            "method": "POST", "header": [],
+            "body": {"mode": "raw", "raw": "{\n  \"email\": \"{{client_email}}\",\n  \"password\": \"{{client_password}}\",\n  \"full_name\": \"Postman Client\",\n  \"phone\": \"+7 900 000-99-99\"\n}", "options": {"raw": {"language": "json"}}},
+            "url": {"raw": "{{base_url}}/auth/register/client", "host": ["{{base_url}}"], "path": ["auth", "register", "client"]}
+          }
+        },
+        {
+          "name": "Login client",
+          "event": [
+            {"listen": "prerequest", "script": {"type": "text/javascript", "exec": [
+              "async function sign(htm, htu, nonce) {",
+              "    const jwk = JSON.parse(pm.collectionVariables.get('dpop_private_jwk'));",
+              "    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);",
+              "    const h = { typ: 'dpop+jwt', alg: 'ES256', jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y } };",
+              "    const p = { jti: [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''), htm: htm, htu: htu, iat: Math.floor(Date.now() / 1000) };",
+              "    if (nonce) p.nonce = nonce;",
+              "    const b64 = s => btoa(unescape(encodeURIComponent(s))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const b64buf = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const si = b64(JSON.stringify(h)) + '.' + b64(JSON.stringify(p));",
+              "    const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(si));",
+              "    return si + '.' + b64buf(sig);",
+              "}",
+              "const url = pm.variables.replaceIn(pm.request.url.toString());",
+              "const htu = url.split('?')[0].split('#')[0];",
+              "const proof = await sign(pm.request.method, htu, null);",
+              "pm.request.headers.add({ key: 'DPoP', value: proof });"
+            ]}},
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "async function sign(htm, htu, nonce) {",
+              "    const jwk = JSON.parse(pm.collectionVariables.get('dpop_private_jwk'));",
+              "    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);",
+              "    const h = { typ: 'dpop+jwt', alg: 'ES256', jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y } };",
+              "    const p = { jti: [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''), htm: htm, htu: htu, iat: Math.floor(Date.now() / 1000) };",
+              "    if (nonce) p.nonce = nonce;",
+              "    const b64 = s => btoa(unescape(encodeURIComponent(s))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const b64buf = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const si = b64(JSON.stringify(h)) + '.' + b64(JSON.stringify(p));",
+              "    const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(si));",
+              "    return si + '.' + b64buf(sig);",
+              "}",
+              "function post(url, headers, body) {",
+              "    return new Promise((resolve, reject) => pm.sendRequest({ url, method: 'POST', header: headers, body: { mode: 'raw', raw: body } }, (e, r) => e ? reject(e) : resolve(r)));",
+              "}",
+              "async function run() {",
+              "    let res = pm.response;",
+              "    if (res.code === 401 && res.headers.has('DPoP-Nonce')) {",
+              "        const nonce = res.headers.get('DPoP-Nonce');",
+              "        const url = pm.variables.replaceIn(pm.request.url.toString());",
+              "        const htu = url.split('?')[0].split('#')[0];",
+              "        const bodyStr = pm.variables.replaceIn(pm.request.body.raw);",
+              "        const proof = await sign(pm.request.method, htu, nonce);",
+              "        res = await post(url, { 'DPoP': proof, 'Content-Type': 'application/json' }, bodyStr);",
+              "    }",
+              "    pm.test('Status 200', () => pm.expect(res.code).to.equal(200));",
+              "    const b = res.json();",
+              "    pm.test('DPoP pair', () => {",
+              "        pm.expect(b.token_type).to.eql('DPoP');",
+              "        pm.expect(b.access_token).to.be.a('string');",
+              "        pm.expect(b.refresh_token).to.be.a('string');",
+              "    });",
+              "    pm.collectionVariables.set('client_access_token', b.access_token);",
+              "    pm.collectionVariables.set('refresh_token', b.refresh_token);",
+              "}",
+              "await run();"
+            ]}}
+          ],
+          "request": {
+            "method": "POST", "header": [],
+            "body": {"mode": "raw", "raw": "{\n  \"email\": \"{{client_email}}\",\n  \"password\": \"{{client_password}}\"\n}", "options": {"raw": {"language": "json"}}},
+            "url": {"raw": "{{base_url}}/auth/login/client", "host": ["{{base_url}}"], "path": ["auth", "login", "client"]}
+          }
+        },
+        {
+          "name": "Login employee (admin)",
+          "event": [
+            {"listen": "prerequest", "script": {"type": "text/javascript", "exec": [
+              "async function sign(htm, htu, nonce) {",
+              "    const jwk = JSON.parse(pm.collectionVariables.get('dpop_private_jwk'));",
+              "    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);",
+              "    const h = { typ: 'dpop+jwt', alg: 'ES256', jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y } };",
+              "    const p = { jti: [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''), htm: htm, htu: htu, iat: Math.floor(Date.now() / 1000) };",
+              "    if (nonce) p.nonce = nonce;",
+              "    const b64 = s => btoa(unescape(encodeURIComponent(s))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const b64buf = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const si = b64(JSON.stringify(h)) + '.' + b64(JSON.stringify(p));",
+              "    const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(si));",
+              "    return si + '.' + b64buf(sig);",
+              "}",
+              "const url = pm.variables.replaceIn(pm.request.url.toString());",
+              "const htu = url.split('?')[0].split('#')[0];",
+              "const proof = await sign(pm.request.method, htu, null);",
+              "pm.request.headers.add({ key: 'DPoP', value: proof });"
+            ]}},
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "async function sign(htm, htu, nonce) {",
+              "    const jwk = JSON.parse(pm.collectionVariables.get('dpop_private_jwk'));",
+              "    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);",
+              "    const h = { typ: 'dpop+jwt', alg: 'ES256', jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y } };",
+              "    const p = { jti: [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''), htm: htm, htu: htu, iat: Math.floor(Date.now() / 1000) };",
+              "    if (nonce) p.nonce = nonce;",
+              "    const b64 = s => btoa(unescape(encodeURIComponent(s))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const b64buf = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const si = b64(JSON.stringify(h)) + '.' + b64(JSON.stringify(p));",
+              "    const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(si));",
+              "    return si + '.' + b64buf(sig);",
+              "}",
+              "function post(url, headers, body) {",
+              "    return new Promise((resolve, reject) => pm.sendRequest({ url, method: 'POST', header: headers, body: { mode: 'raw', raw: body } }, (e, r) => e ? reject(e) : resolve(r)));",
+              "}",
+              "async function run() {",
+              "    let res = pm.response;",
+              "    if (res.code === 401 && res.headers.has('DPoP-Nonce')) {",
+              "        const nonce = res.headers.get('DPoP-Nonce');",
+              "        const url = pm.variables.replaceIn(pm.request.url.toString());",
+              "        const htu = url.split('?')[0].split('#')[0];",
+              "        const bodyStr = pm.variables.replaceIn(pm.request.body.raw);",
+              "        const proof = await sign(pm.request.method, htu, nonce);",
+              "        res = await post(url, { 'DPoP': proof, 'Content-Type': 'application/json' }, bodyStr);",
+              "    }",
+              "    pm.test('Status 200', () => pm.expect(res.code).to.equal(200));",
+              "    const b = res.json();",
+              "    pm.test('Returns DPoP pair', () => pm.expect(b.token_type).to.eql('DPoP'));",
+              "    pm.collectionVariables.set('admin_access_token', b.access_token);",
+              "}",
+              "await run();"
+            ]}}
+          ],
+          "request": {
+            "method": "POST", "header": [],
+            "body": {"mode": "raw", "raw": "{\n  \"email\": \"{{admin_email}}\",\n  \"password\": \"{{seed_password}}\"\n}", "options": {"raw": {"language": "json"}}},
+            "url": {"raw": "{{base_url}}/auth/login/employee", "host": ["{{base_url}}"], "path": ["auth", "login", "employee"]}
+          }
+        },
+        {
+          "name": "Login employee (courier)",
+          "event": [
+            {"listen": "prerequest", "script": {"type": "text/javascript", "exec": [
+              "async function sign(htm, htu, nonce) {",
+              "    const jwk = JSON.parse(pm.collectionVariables.get('dpop_private_jwk'));",
+              "    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);",
+              "    const h = { typ: 'dpop+jwt', alg: 'ES256', jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y } };",
+              "    const p = { jti: [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''), htm: htm, htu: htu, iat: Math.floor(Date.now() / 1000) };",
+              "    if (nonce) p.nonce = nonce;",
+              "    const b64 = s => btoa(unescape(encodeURIComponent(s))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const b64buf = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const si = b64(JSON.stringify(h)) + '.' + b64(JSON.stringify(p));",
+              "    const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(si));",
+              "    return si + '.' + b64buf(sig);",
+              "}",
+              "const url = pm.variables.replaceIn(pm.request.url.toString());",
+              "const htu = url.split('?')[0].split('#')[0];",
+              "const proof = await sign(pm.request.method, htu, null);",
+              "pm.request.headers.add({ key: 'DPoP', value: proof });"
+            ]}},
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "async function sign(htm, htu, nonce) {",
+              "    const jwk = JSON.parse(pm.collectionVariables.get('dpop_private_jwk'));",
+              "    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);",
+              "    const h = { typ: 'dpop+jwt', alg: 'ES256', jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y } };",
+              "    const p = { jti: [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''), htm: htm, htu: htu, iat: Math.floor(Date.now() / 1000) };",
+              "    if (nonce) p.nonce = nonce;",
+              "    const b64 = s => btoa(unescape(encodeURIComponent(s))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const b64buf = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const si = b64(JSON.stringify(h)) + '.' + b64(JSON.stringify(p));",
+              "    const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(si));",
+              "    return si + '.' + b64buf(sig);",
+              "}",
+              "function post(url, headers, body) {",
+              "    return new Promise((resolve, reject) => pm.sendRequest({ url, method: 'POST', header: headers, body: { mode: 'raw', raw: body } }, (e, r) => e ? reject(e) : resolve(r)));",
+              "}",
+              "async function run() {",
+              "    let res = pm.response;",
+              "    if (res.code === 401 && res.headers.has('DPoP-Nonce')) {",
+              "        const nonce = res.headers.get('DPoP-Nonce');",
+              "        const url = pm.variables.replaceIn(pm.request.url.toString());",
+              "        const htu = url.split('?')[0].split('#')[0];",
+              "        const bodyStr = pm.variables.replaceIn(pm.request.body.raw);",
+              "        const proof = await sign(pm.request.method, htu, nonce);",
+              "        res = await post(url, { 'DPoP': proof, 'Content-Type': 'application/json' }, bodyStr);",
+              "    }",
+              "    pm.test('Status 200', () => pm.expect(res.code).to.equal(200));",
+              "    const b = res.json();",
+              "    pm.collectionVariables.set('courier_access_token', b.access_token);",
+              "}",
+              "await run();"
+            ]}}
+          ],
+          "request": {
+            "method": "POST", "header": [],
+            "body": {"mode": "raw", "raw": "{\n  \"email\": \"{{courier_email}}\",\n  \"password\": \"{{seed_password}}\"\n}", "options": {"raw": {"language": "json"}}},
+            "url": {"raw": "{{base_url}}/auth/login/employee", "host": ["{{base_url}}"], "path": ["auth", "login", "employee"]}
+          }
+        },
+        {
+          "name": "Login employee (manager)",
+          "event": [
+            {"listen": "prerequest", "script": {"type": "text/javascript", "exec": [
+              "async function sign(htm, htu, nonce) {",
+              "    const jwk = JSON.parse(pm.collectionVariables.get('dpop_private_jwk'));",
+              "    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);",
+              "    const h = { typ: 'dpop+jwt', alg: 'ES256', jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y } };",
+              "    const p = { jti: [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''), htm: htm, htu: htu, iat: Math.floor(Date.now() / 1000) };",
+              "    if (nonce) p.nonce = nonce;",
+              "    const b64 = s => btoa(unescape(encodeURIComponent(s))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const b64buf = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const si = b64(JSON.stringify(h)) + '.' + b64(JSON.stringify(p));",
+              "    const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(si));",
+              "    return si + '.' + b64buf(sig);",
+              "}",
+              "const url = pm.variables.replaceIn(pm.request.url.toString());",
+              "const htu = url.split('?')[0].split('#')[0];",
+              "const proof = await sign(pm.request.method, htu, null);",
+              "pm.request.headers.add({ key: 'DPoP', value: proof });"
+            ]}},
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "async function sign(htm, htu, nonce) {",
+              "    const jwk = JSON.parse(pm.collectionVariables.get('dpop_private_jwk'));",
+              "    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);",
+              "    const h = { typ: 'dpop+jwt', alg: 'ES256', jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y } };",
+              "    const p = { jti: [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''), htm: htm, htu: htu, iat: Math.floor(Date.now() / 1000) };",
+              "    if (nonce) p.nonce = nonce;",
+              "    const b64 = s => btoa(unescape(encodeURIComponent(s))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const b64buf = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const si = b64(JSON.stringify(h)) + '.' + b64(JSON.stringify(p));",
+              "    const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(si));",
+              "    return si + '.' + b64buf(sig);",
+              "}",
+              "function post(url, headers, body) {",
+              "    return new Promise((resolve, reject) => pm.sendRequest({ url, method: 'POST', header: headers, body: { mode: 'raw', raw: body } }, (e, r) => e ? reject(e) : resolve(r)));",
+              "}",
+              "async function run() {",
+              "    let res = pm.response;",
+              "    if (res.code === 401 && res.headers.has('DPoP-Nonce')) {",
+              "        const nonce = res.headers.get('DPoP-Nonce');",
+              "        const url = pm.variables.replaceIn(pm.request.url.toString());",
+              "        const htu = url.split('?')[0].split('#')[0];",
+              "        const bodyStr = pm.variables.replaceIn(pm.request.body.raw);",
+              "        const proof = await sign(pm.request.method, htu, nonce);",
+              "        res = await post(url, { 'DPoP': proof, 'Content-Type': 'application/json' }, bodyStr);",
+              "    }",
+              "    pm.test('Status 200', () => pm.expect(res.code).to.equal(200));",
+              "    const b = res.json();",
+              "    pm.collectionVariables.set('manager_access_token', b.access_token);",
+              "}",
+              "await run();"
+            ]}}
+          ],
+          "request": {
+            "method": "POST", "header": [],
+            "body": {"mode": "raw", "raw": "{\n  \"email\": \"{{manager_email}}\",\n  \"password\": \"{{seed_password}}\"\n}", "options": {"raw": {"language": "json"}}},
+            "url": {"raw": "{{base_url}}/auth/login/employee", "host": ["{{base_url}}"], "path": ["auth", "login", "employee"]}
+          }
+        },
+        {
+          "name": "Login employee (wrong password → 401)",
+          "event": [
+            {"listen": "prerequest", "script": {"type": "text/javascript", "exec": [
+              "async function sign(htm, htu, nonce) {",
+              "    const jwk = JSON.parse(pm.collectionVariables.get('dpop_private_jwk'));",
+              "    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);",
+              "    const h = { typ: 'dpop+jwt', alg: 'ES256', jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y } };",
+              "    const p = { jti: [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''), htm: htm, htu: htu, iat: Math.floor(Date.now() / 1000) };",
+              "    if (nonce) p.nonce = nonce;",
+              "    const b64 = s => btoa(unescape(encodeURIComponent(s))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const b64buf = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const si = b64(JSON.stringify(h)) + '.' + b64(JSON.stringify(p));",
+              "    const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(si));",
+              "    return si + '.' + b64buf(sig);",
+              "}",
+              "const url = pm.variables.replaceIn(pm.request.url.toString());",
+              "const htu = url.split('?')[0].split('#')[0];",
+              "const proof = await sign(pm.request.method, htu, null);",
+              "pm.request.headers.add({ key: 'DPoP', value: proof });"
+            ]}},
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "async function sign(htm, htu, nonce) {",
+              "    const jwk = JSON.parse(pm.collectionVariables.get('dpop_private_jwk'));",
+              "    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);",
+              "    const h = { typ: 'dpop+jwt', alg: 'ES256', jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y } };",
+              "    const p = { jti: [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''), htm: htm, htu: htu, iat: Math.floor(Date.now() / 1000) };",
+              "    if (nonce) p.nonce = nonce;",
+              "    const b64 = s => btoa(unescape(encodeURIComponent(s))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const b64buf = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const si = b64(JSON.stringify(h)) + '.' + b64(JSON.stringify(p));",
+              "    const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(si));",
+              "    return si + '.' + b64buf(sig);",
+              "}",
+              "function post(url, headers, body) {",
+              "    return new Promise((resolve, reject) => pm.sendRequest({ url, method: 'POST', header: headers, body: { mode: 'raw', raw: body } }, (e, r) => e ? reject(e) : resolve(r)));",
+              "}",
+              "async function run() {",
+              "    let res = pm.response;",
+              "    if (res.code === 401 && res.headers.has('DPoP-Nonce')) {",
+              "        const nonce = res.headers.get('DPoP-Nonce');",
+              "        const url = pm.variables.replaceIn(pm.request.url.toString());",
+              "        const htu = url.split('?')[0].split('#')[0];",
+              "        const bodyStr = pm.variables.replaceIn(pm.request.body.raw);",
+              "        const proof = await sign(pm.request.method, htu, nonce);",
+              "        res = await post(url, { 'DPoP': proof, 'Content-Type': 'application/json' }, bodyStr);",
+              "    }",
+              "    pm.test('Status 401', () => pm.expect(res.code).to.equal(401));",
+              "    pm.test('Invalid credentials', () => pm.expect(res.json().detail).to.eql('Invalid credentials'));",
+              "}",
+              "await run();"
+            ]}}
+          ],
+          "request": {
+            "method": "POST", "header": [],
+            "body": {"mode": "raw", "raw": "{\n  \"email\": \"{{admin_email}}\",\n  \"password\": \"wrong-password\"\n}", "options": {"raw": {"language": "json"}}},
+            "url": {"raw": "{{base_url}}/auth/login/employee", "host": ["{{base_url}}"], "path": ["auth", "login", "employee"]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 - Catalog (public)",
+      "item": [
+        {
+          "name": "GET /catalog/categories",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Body is array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+            ]}}
+          ],
+          "request": {"method": "GET", "header": [], "url": {"raw": "{{base_url}}/catalog/categories", "host": ["{{base_url}}"], "path": ["catalog", "categories"]}}
+        },
+        {
+          "name": "GET /catalog/pickup-points (save point_id)",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "const arr = pm.response.json();",
+              "pm.test('Non-empty active array', () => {",
+              "  pm.expect(arr).to.be.an('array').with.length.greaterThan(0);",
+              "  arr.forEach(p => pm.expect(p.is_active).to.equal(true));",
+              "});",
+              "pm.collectionVariables.set('point_id', arr[0].id);"
+            ]}}
+          ],
+          "request": {"method": "GET", "header": [], "url": {"raw": "{{base_url}}/catalog/pickup-points", "host": ["{{base_url}}"], "path": ["catalog", "pickup-points"]}}
+        },
+        {
+          "name": "GET /catalog/games (save game_id)",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "const arr = pm.response.json();",
+              "pm.test('Has games with required fields', () => {",
+              "  pm.expect(arr.length).to.be.greaterThan(0);",
+              "  pm.expect(arr[0]).to.include.keys('id', 'title', 'min_players', 'max_players', 'playtime_minutes', 'daily_price', 'deposit_price', 'cover_url');",
+              "});",
+              "pm.collectionVariables.set('game_id', arr[0].id);"
+            ]}}
+          ],
+          "request": {"method": "GET", "header": [], "url": {"raw": "{{base_url}}/catalog/games", "host": ["{{base_url}}"], "path": ["catalog", "games"]}}
+        },
+        {
+          "name": "GET /catalog/games/{id}",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Id matches', () => pm.expect(pm.response.json().id).to.eql(Number(pm.collectionVariables.get('game_id'))));"
+            ]}}
+          ],
+          "request": {"method": "GET", "header": [], "url": {"raw": "{{base_url}}/catalog/games/{{game_id}}", "host": ["{{base_url}}"], "path": ["catalog", "games", "{{game_id}}"]}}
+        },
+        {
+          "name": "GET /catalog/games/{unknown} → 404",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 404', () => pm.response.to.have.status(404));"
+            ]}}
+          ],
+          "request": {"method": "GET", "header": [], "url": {"raw": "{{base_url}}/catalog/games/999999", "host": ["{{base_url}}"], "path": ["catalog", "games", "999999"]}}
+        },
+        {
+          "name": "GET /catalog/search",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Body is array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+            ]}}
+          ],
+          "request": {
+            "method": "GET", "header": [],
+            "url": {
+              "raw": "{{base_url}}/catalog/search?pickup_point_id={{point_id}}&limit=20",
+              "host": ["{{base_url}}"], "path": ["catalog", "search"],
+              "query": [{"key": "pickup_point_id", "value": "{{point_id}}"}, {"key": "limit", "value": "20"}]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 - Orders (client)",
+      "item": [
+        {
+          "name": "POST /orders (201)",
+          "event": [
+            {"listen": "prerequest", "script": {"type": "text/javascript", "exec": [
+              "const d = new Date(); d.setUTCHours(0,0,0,0);",
+              "const start = new Date(d.getTime() + 86400000);",
+              "const end = new Date(start.getTime() + 2*86400000);",
+              "const f = x => x.toISOString().slice(0,10);",
+              "pm.collectionVariables.set('order_start', f(start));",
+              "pm.collectionVariables.set('order_end', f(end));"
+            ]}},
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 201', () => pm.response.to.have.status(201));",
+              "const r = pm.response.json();",
+              "pm.test('Status READY_FOR_PICKUP or NEEDS_TRANSFER', () => pm.expect(r.status).to.be.oneOf(['READY_FOR_PICKUP','NEEDS_TRANSFER']));",
+              "pm.test('Items present, total positive', () => {",
+              "  pm.expect(r.items.length).to.be.greaterThan(0);",
+              "  pm.expect(Number(r.total_price)).to.be.greaterThan(0);",
+              "});",
+              "pm.collectionVariables.set('created_order_id', r.id);"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{client_access_token}}", "type": "string"}]},
+            "method": "POST", "header": [],
+            "body": {"mode": "raw", "raw": "{\n  \"pickup_point_id\": {{point_id}},\n  \"start_date\": \"{{order_start}}\",\n  \"end_date\": \"{{order_end}}\",\n  \"game_ids\": [{{game_id}}]\n}", "options": {"raw": {"language": "json"}}},
+            "url": {"raw": "{{base_url}}/orders", "host": ["{{base_url}}"], "path": ["orders"]}
+          }
+        },
+        {
+          "name": "POST /orders without auth → 401",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 401', () => pm.response.to.have.status(401));"
+            ]}}
+          ],
+          "request": {
+            "method": "POST", "header": [],
+            "body": {"mode": "raw", "raw": "{\n  \"pickup_point_id\": 1,\n  \"start_date\": \"2026-12-01\",\n  \"end_date\": \"2026-12-03\",\n  \"game_ids\": [1]\n}", "options": {"raw": {"language": "json"}}},
+            "url": {"raw": "{{base_url}}/orders", "host": ["{{base_url}}"], "path": ["orders"]}
+          }
+        },
+        {
+          "name": "GET /orders",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Contains created order', () => {",
+              "  const ids = pm.response.json().map(o => o.id);",
+              "  pm.expect(ids).to.include(Number(pm.collectionVariables.get('created_order_id')));",
+              "});"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{client_access_token}}", "type": "string"}]},
+            "method": "GET", "header": [],
+            "url": {"raw": "{{base_url}}/orders", "host": ["{{base_url}}"], "path": ["orders"]}
+          }
+        },
+        {
+          "name": "GET /orders/{id}",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Has items', () => pm.expect(pm.response.json().items).to.be.an('array'));"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{client_access_token}}", "type": "string"}]},
+            "method": "GET", "header": [],
+            "url": {"raw": "{{base_url}}/orders/{{created_order_id}}", "host": ["{{base_url}}"], "path": ["orders", "{{created_order_id}}"]}
+          }
+        },
+        {
+          "name": "POST /orders/{id}/cancel",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Status CANCELLED', () => pm.expect(pm.response.json().status).to.eql('CANCELLED'));"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{client_access_token}}", "type": "string"}]},
+            "method": "POST", "header": [],
+            "url": {"raw": "{{base_url}}/orders/{{created_order_id}}/cancel", "host": ["{{base_url}}"], "path": ["orders", "{{created_order_id}}", "cancel"]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 - Courier",
+      "item": [
+        {
+          "name": "GET /courier/deliveries/open (save delivery_id)",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "const arr = pm.response.json();",
+              "pm.test('All are CREATED', () => arr.forEach(d => pm.expect(d.status).to.eql('CREATED')));",
+              "if (arr.length > 0) pm.collectionVariables.set('delivery_id', arr[0].id);"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{courier_access_token}}", "type": "string"}]},
+            "method": "GET", "header": [],
+            "url": {"raw": "{{base_url}}/courier/deliveries/open", "host": ["{{base_url}}"], "path": ["courier", "deliveries", "open"]}
+          }
+        },
+        {
+          "name": "GET /courier/deliveries",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Body is array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{courier_access_token}}", "type": "string"}]},
+            "method": "GET", "header": [],
+            "url": {"raw": "{{base_url}}/courier/deliveries?active_only=false", "host": ["{{base_url}}"], "path": ["courier", "deliveries"], "query": [{"key": "active_only", "value": "false"}]}
+          }
+        },
+        {
+          "name": "POST /courier/deliveries/{id}/accept",
+          "event": [
+            {"listen": "prerequest", "script": {"type": "text/javascript", "exec": [
+              "if (!pm.collectionVariables.get('delivery_id')) pm.execution.skipRequest();"
+            ]}},
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "const r = pm.response.json();",
+              "pm.test('ACCEPTED + courier assigned', () => {",
+              "  pm.expect(r.status).to.eql('ACCEPTED');",
+              "  pm.expect(r.courier_id).to.be.a('number');",
+              "});"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{courier_access_token}}", "type": "string"}]},
+            "method": "POST", "header": [],
+            "url": {"raw": "{{base_url}}/courier/deliveries/{{delivery_id}}/accept", "host": ["{{base_url}}"], "path": ["courier", "deliveries", "{{delivery_id}}", "accept"]}
+          }
+        },
+        {
+          "name": "POST /courier/deliveries/{id}/start",
+          "event": [
+            {"listen": "prerequest", "script": {"type": "text/javascript", "exec": [
+              "if (!pm.collectionVariables.get('delivery_id')) pm.execution.skipRequest();"
+            ]}},
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('IN_TRANSIT', () => pm.expect(pm.response.json().status).to.eql('IN_TRANSIT'));"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{courier_access_token}}", "type": "string"}]},
+            "method": "POST", "header": [],
+            "url": {"raw": "{{base_url}}/courier/deliveries/{{delivery_id}}/start", "host": ["{{base_url}}"], "path": ["courier", "deliveries", "{{delivery_id}}", "start"]}
+          }
+        },
+        {
+          "name": "POST /courier/deliveries/{id}/complete",
+          "event": [
+            {"listen": "prerequest", "script": {"type": "text/javascript", "exec": [
+              "if (!pm.collectionVariables.get('delivery_id')) pm.execution.skipRequest();"
+            ]}},
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "const r = pm.response.json();",
+              "pm.test('DELIVERED + delivered_at set', () => {",
+              "  pm.expect(r.status).to.eql('DELIVERED');",
+              "  pm.expect(r.delivered_at).to.be.a('string');",
+              "});"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{courier_access_token}}", "type": "string"}]},
+            "method": "POST", "header": [],
+            "url": {"raw": "{{base_url}}/courier/deliveries/{{delivery_id}}/complete", "host": ["{{base_url}}"], "path": ["courier", "deliveries", "{{delivery_id}}", "complete"]}
+          }
+        },
+        {
+          "name": "GET /courier/deliveries/open as CLIENT → 403",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 403', () => pm.response.to.have.status(403));"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{client_access_token}}", "type": "string"}]},
+            "method": "GET", "header": [],
+            "url": {"raw": "{{base_url}}/courier/deliveries/open", "host": ["{{base_url}}"], "path": ["courier", "deliveries", "open"]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 - Manager",
+      "item": [
+        {
+          "name": "GET /manager/orders?status=READY_FOR_PICKUP (save ready order)",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "const arr = pm.response.json();",
+              "const ready = arr.filter(o => o.status === 'READY_FOR_PICKUP');",
+              "pm.test('At least one ready order at point', () => pm.expect(ready.length).to.be.greaterThan(0));",
+              "if (ready.length > 0) pm.collectionVariables.set('manager_ready_order_id', ready[0].id);"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{manager_access_token}}", "type": "string"}]},
+            "method": "GET", "header": [],
+            "url": {"raw": "{{base_url}}/manager/orders?status=READY_FOR_PICKUP", "host": ["{{base_url}}"], "path": ["manager", "orders"], "query": [{"key": "status", "value": "READY_FOR_PICKUP"}]}
+          }
+        },
+        {
+          "name": "GET /manager/orders/{id} (save copy_id for damage)",
+          "event": [
+            {"listen": "prerequest", "script": {"type": "text/javascript", "exec": [
+              "if (!pm.collectionVariables.get('manager_ready_order_id')) pm.execution.skipRequest();"
+            ]}},
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "const r = pm.response.json();",
+              "pm.test('READY_FOR_PICKUP', () => pm.expect(r.status).to.eql('READY_FOR_PICKUP'));",
+              "pm.test('Has items', () => pm.expect(r.items.length).to.be.greaterThan(0));",
+              "pm.collectionVariables.set('manager_ready_copy_id', r.items[0].game_copy_id);"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{manager_access_token}}", "type": "string"}]},
+            "method": "GET", "header": [],
+            "url": {"raw": "{{base_url}}/manager/orders/{{manager_ready_order_id}}", "host": ["{{base_url}}"], "path": ["manager", "orders", "{{manager_ready_order_id}}"]}
+          }
+        },
+        {
+          "name": "GET /manager/inventory",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Body is array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{manager_access_token}}", "type": "string"}]},
+            "method": "GET", "header": [],
+            "url": {"raw": "{{base_url}}/manager/inventory", "host": ["{{base_url}}"], "path": ["manager", "inventory"]}
+          }
+        },
+        {
+          "name": "POST /manager/orders/{id}/issue",
+          "event": [
+            {"listen": "prerequest", "script": {"type": "text/javascript", "exec": [
+              "if (!pm.collectionVariables.get('manager_ready_order_id')) pm.execution.skipRequest();"
+            ]}},
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('ACTIVE', () => pm.expect(pm.response.json().status).to.eql('ACTIVE'));"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{manager_access_token}}", "type": "string"}]},
+            "method": "POST", "header": [],
+            "url": {"raw": "{{base_url}}/manager/orders/{{manager_ready_order_id}}/issue", "host": ["{{base_url}}"], "path": ["manager", "orders", "{{manager_ready_order_id}}", "issue"]}
+          }
+        },
+        {
+          "name": "POST /manager/orders/{id}/return (no damage)",
+          "event": [
+            {"listen": "prerequest", "script": {"type": "text/javascript", "exec": [
+              "if (!pm.collectionVariables.get('manager_ready_order_id')) pm.execution.skipRequest();"
+            ]}},
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "const r = pm.response.json();",
+              "pm.test('Order COMPLETED', () => pm.expect(r.order.status).to.eql('COMPLETED'));",
+              "pm.test('No damage reports', () => pm.expect(r.damage_reports).to.be.an('array').that.is.empty);",
+              "pm.test('Deposit fully refunded', () => pm.expect(Number(r.deposit_refund)).to.eql(Number(r.order.deposit_paid)));"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{manager_access_token}}", "type": "string"}]},
+            "method": "POST", "header": [],
+            "body": {"mode": "raw", "raw": "{\n  \"damages\": []\n}", "options": {"raw": {"language": "json"}}},
+            "url": {"raw": "{{base_url}}/manager/orders/{{manager_ready_order_id}}/return", "host": ["{{base_url}}"], "path": ["manager", "orders", "{{manager_ready_order_id}}", "return"]}
+          }
+        },
+        {
+          "name": "GET /manager/orders as CLIENT → 403",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 403', () => pm.response.to.have.status(403));"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{client_access_token}}", "type": "string"}]},
+            "method": "GET", "header": [],
+            "url": {"raw": "{{base_url}}/manager/orders", "host": ["{{base_url}}"], "path": ["manager", "orders"]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 - Damage",
+      "item": [
+        {
+          "name": "POST /manager/damage-reports (save report_id)",
+          "event": [
+            {"listen": "prerequest", "script": {"type": "text/javascript", "exec": [
+              "if (!pm.collectionVariables.get('manager_ready_copy_id')) pm.execution.skipRequest();"
+            ]}},
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "const r = pm.response.json();",
+              "pm.test('order_id is null, deposit_withheld 0', () => {",
+              "  pm.expect(r.order_id).to.be.null;",
+              "  pm.expect(Number(r.deposit_withheld)).to.eql(0);",
+              "  pm.expect(r.resolved_at).to.be.null;",
+              "});",
+              "pm.collectionVariables.set('created_damage_report_id', r.id);"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{manager_access_token}}", "type": "string"}]},
+            "method": "POST", "header": [],
+            "body": {"mode": "raw", "raw": "{\n  \"game_copy_id\": {{manager_ready_copy_id}},\n  \"description\": \"Postman: routine inspection — torn corner\"\n}", "options": {"raw": {"language": "json"}}},
+            "url": {"raw": "{{base_url}}/manager/damage-reports", "host": ["{{base_url}}"], "path": ["manager", "damage-reports"]}
+          }
+        },
+        {
+          "name": "POST /damage-reports/{id}/resolve",
+          "event": [
+            {"listen": "prerequest", "script": {"type": "text/javascript", "exec": [
+              "if (!pm.collectionVariables.get('created_damage_report_id')) pm.execution.skipRequest();"
+            ]}},
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('resolved_at is set', () => pm.expect(pm.response.json().resolved_at).to.be.a('string'));"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{manager_access_token}}", "type": "string"}]},
+            "method": "POST", "header": [],
+            "url": {"raw": "{{base_url}}/damage-reports/{{created_damage_report_id}}/resolve", "host": ["{{base_url}}"], "path": ["damage-reports", "{{created_damage_report_id}}", "resolve"]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "07 - Admin: Categories",
+      "item": [
+        {
+          "name": "POST /admin/categories (201, save id)",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 201', () => pm.response.to.have.status(201));",
+              "pm.collectionVariables.set('created_category_id', pm.response.json().id);"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{admin_access_token}}", "type": "string"}]},
+            "method": "POST", "header": [],
+            "body": {"mode": "raw", "raw": "{\n  \"name\": \"Postman-{{$timestamp}}\"\n}", "options": {"raw": {"language": "json"}}},
+            "url": {"raw": "{{base_url}}/admin/categories", "host": ["{{base_url}}"], "path": ["admin", "categories"]}
+          }
+        },
+        {
+          "name": "POST /admin/categories (duplicate → 409)",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 409', () => pm.response.to.have.status(409));"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{admin_access_token}}", "type": "string"}]},
+            "method": "POST", "header": [],
+            "body": {"mode": "raw", "raw": "{\n  \"name\": \"Стратегии\"\n}", "options": {"raw": {"language": "json"}}},
+            "url": {"raw": "{{base_url}}/admin/categories", "host": ["{{base_url}}"], "path": ["admin", "categories"]}
+          }
+        },
+        {
+          "name": "PUT /admin/categories/{id}",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{admin_access_token}}", "type": "string"}]},
+            "method": "PUT", "header": [],
+            "body": {"mode": "raw", "raw": "{\n  \"name\": \"Postman-Updated-{{$timestamp}}\"\n}", "options": {"raw": {"language": "json"}}},
+            "url": {"raw": "{{base_url}}/admin/categories/{{created_category_id}}", "host": ["{{base_url}}"], "path": ["admin", "categories", "{{created_category_id}}"]}
+          }
+        },
+        {
+          "name": "DELETE /admin/categories/{id} (204)",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 204', () => pm.response.to.have.status(204));"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{admin_access_token}}", "type": "string"}]},
+            "method": "DELETE", "header": [],
+            "url": {"raw": "{{base_url}}/admin/categories/{{created_category_id}}", "host": ["{{base_url}}"], "path": ["admin", "categories", "{{created_category_id}}"]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "08 - Admin: Pickup points",
+      "item": [
+        {
+          "name": "GET /admin/pickup-points",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Includes inactive', () => {",
+              "  const arr = pm.response.json();",
+              "  pm.expect(arr.some(p => p.is_active === false)).to.equal(true);",
+              "});"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{admin_access_token}}", "type": "string"}]},
+            "method": "GET", "header": [],
+            "url": {"raw": "{{base_url}}/admin/pickup-points", "host": ["{{base_url}}"], "path": ["admin", "pickup-points"]}
+          }
+        },
+        {
+          "name": "POST /admin/pickup-points (201, save id)",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 201', () => pm.response.to.have.status(201));",
+              "const r = pm.response.json();",
+              "pm.test('is_active defaults to true', () => pm.expect(r.is_active).to.equal(true));",
+              "pm.collectionVariables.set('created_point_id', r.id);"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{admin_access_token}}", "type": "string"}]},
+            "method": "POST", "header": [],
+            "body": {"mode": "raw", "raw": "{\n  \"name\": \"Postman Point {{$timestamp}}\",\n  \"address\": \"ул. Тестовая, 1\",\n  \"phone\": \"+7 900 999-99-99\"\n}", "options": {"raw": {"language": "json"}}},
+            "url": {"raw": "{{base_url}}/admin/pickup-points", "host": ["{{base_url}}"], "path": ["admin", "pickup-points"]}
+          }
+        },
+        {
+          "name": "PUT /admin/pickup-points/{id}",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{admin_access_token}}", "type": "string"}]},
+            "method": "PUT", "header": [],
+            "body": {"mode": "raw", "raw": "{\n  \"address\": \"ул. Обновлённая, 42\"\n}", "options": {"raw": {"language": "json"}}},
+            "url": {"raw": "{{base_url}}/admin/pickup-points/{{created_point_id}}", "host": ["{{base_url}}"], "path": ["admin", "pickup-points", "{{created_point_id}}"]}
+          }
+        },
+        {
+          "name": "POST /admin/pickup-points/{id}/deactivate",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('is_active=false', () => pm.expect(pm.response.json().is_active).to.equal(false));"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{admin_access_token}}", "type": "string"}]},
+            "method": "POST", "header": [],
+            "url": {"raw": "{{base_url}}/admin/pickup-points/{{created_point_id}}/deactivate", "host": ["{{base_url}}"], "path": ["admin", "pickup-points", "{{created_point_id}}", "deactivate"]}
+          }
+        },
+        {
+          "name": "POST /admin/pickup-points/{id}/activate",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('is_active=true', () => pm.expect(pm.response.json().is_active).to.equal(true));"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{admin_access_token}}", "type": "string"}]},
+            "method": "POST", "header": [],
+            "url": {"raw": "{{base_url}}/admin/pickup-points/{{created_point_id}}/activate", "host": ["{{base_url}}"], "path": ["admin", "pickup-points", "{{created_point_id}}", "activate"]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "09 - Admin: Games",
+      "item": [
+        {
+          "name": "POST /admin/games (201, save id)",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 201', () => pm.response.to.have.status(201));",
+              "pm.collectionVariables.set('created_game_id', pm.response.json().id);"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{admin_access_token}}", "type": "string"}]},
+            "method": "POST", "header": [],
+            "body": {"mode": "raw", "raw": "{\n  \"title\": \"Postman Game {{$timestamp}}\",\n  \"description\": \"Generated by the collection\",\n  \"min_players\": 2,\n  \"max_players\": 4,\n  \"playtime_minutes\": 30,\n  \"daily_price\": \"100.00\",\n  \"deposit_price\": \"500.00\",\n  \"category_ids\": []\n}", "options": {"raw": {"language": "json"}}},
+            "url": {"raw": "{{base_url}}/admin/games", "host": ["{{base_url}}"], "path": ["admin", "games"]}
+          }
+        },
+        {
+          "name": "PUT /admin/games/{id}",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('daily_price updated', () => pm.expect(Number(pm.response.json().daily_price)).to.eql(150));"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{admin_access_token}}", "type": "string"}]},
+            "method": "PUT", "header": [],
+            "body": {"mode": "raw", "raw": "{\n  \"daily_price\": \"150.00\"\n}", "options": {"raw": {"language": "json"}}},
+            "url": {"raw": "{{base_url}}/admin/games/{{created_game_id}}", "host": ["{{base_url}}"], "path": ["admin", "games", "{{created_game_id}}"]}
+          }
+        },
+        {
+          "name": "PUT /admin/games/{id}/categories (raw list)",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Returns the same game', () => pm.expect(pm.response.json().id).to.eql(Number(pm.collectionVariables.get('created_game_id'))));"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{admin_access_token}}", "type": "string"}]},
+            "method": "PUT", "header": [],
+            "body": {"mode": "raw", "raw": "[1, 2]", "options": {"raw": {"language": "json"}}},
+            "url": {"raw": "{{base_url}}/admin/games/{{created_game_id}}/categories", "host": ["{{base_url}}"], "path": ["admin", "games", "{{created_game_id}}", "categories"]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "10 - Admin: Employees",
+      "item": [
+        {
+          "name": "GET /admin/employees?role=COURIER",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('All are COURIER', () => pm.response.json().forEach(e => pm.expect(e.role).to.eql('COURIER')));"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{admin_access_token}}", "type": "string"}]},
+            "method": "GET", "header": [],
+            "url": {"raw": "{{base_url}}/admin/employees?role=COURIER", "host": ["{{base_url}}"], "path": ["admin", "employees"], "query": [{"key": "role", "value": "COURIER"}]}
+          }
+        },
+        {
+          "name": "POST /admin/employees (201, save id)",
+          "event": [
+            {"listen": "prerequest", "script": {"type": "text/javascript", "exec": [
+              "pm.collectionVariables.set('created_employee_email', 'pm-courier-' + pm.variables.replaceIn('{{$guid}}') + '@test.io');"
+            ]}},
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 201', () => pm.response.to.have.status(201));",
+              "const r = pm.response.json();",
+              "pm.test('Role is COURIER', () => pm.expect(r.role).to.eql('COURIER'));",
+              "pm.collectionVariables.set('created_employee_id', r.id);"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{admin_access_token}}", "type": "string"}]},
+            "method": "POST", "header": [],
+            "body": {"mode": "raw", "raw": "{\n  \"email\": \"{{created_employee_email}}\",\n  \"password\": \"secret1\",\n  \"full_name\": \"Postman Courier\",\n  \"phone\": \"+7 900 888-88-88\",\n  \"role\": \"COURIER\"\n}", "options": {"raw": {"language": "json"}}},
+            "url": {"raw": "{{base_url}}/admin/employees", "host": ["{{base_url}}"], "path": ["admin", "employees"]}
+          }
+        },
+        {
+          "name": "PUT /admin/employees/{id}",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('full_name updated', () => pm.expect(pm.response.json().full_name).to.eql('Postman Courier Updated'));"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{admin_access_token}}", "type": "string"}]},
+            "method": "PUT", "header": [],
+            "body": {"mode": "raw", "raw": "{\n  \"full_name\": \"Postman Courier Updated\"\n}", "options": {"raw": {"language": "json"}}},
+            "url": {"raw": "{{base_url}}/admin/employees/{{created_employee_id}}", "host": ["{{base_url}}"], "path": ["admin", "employees", "{{created_employee_id}}"]}
+          }
+        },
+        {
+          "name": "PUT /admin/employees/{id}/role (query params → MANAGER)",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "const r = pm.response.json();",
+              "pm.test('Role MANAGER + point set', () => {",
+              "  pm.expect(r.role).to.eql('MANAGER');",
+              "  pm.expect(r.pickup_point_id).to.eql(Number(pm.collectionVariables.get('created_point_id')));",
+              "});"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{admin_access_token}}", "type": "string"}]},
+            "method": "PUT", "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/employees/{{created_employee_id}}/role?role=MANAGER&pickup_point_id={{created_point_id}}",
+              "host": ["{{base_url}}"], "path": ["admin", "employees", "{{created_employee_id}}", "role"],
+              "query": [{"key": "role", "value": "MANAGER"}, {"key": "pickup_point_id", "value": "{{created_point_id}}"}]
+            }
+          }
+        },
+        {
+          "name": "PUT /admin/employees/{id}/pickup-point (query param)",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Moved to point_id', () => pm.expect(pm.response.json().pickup_point_id).to.eql(Number(pm.collectionVariables.get('point_id'))));"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{admin_access_token}}", "type": "string"}]},
+            "method": "PUT", "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/employees/{{created_employee_id}}/pickup-point?pickup_point_id={{point_id}}",
+              "host": ["{{base_url}}"], "path": ["admin", "employees", "{{created_employee_id}}", "pickup-point"],
+              "query": [{"key": "pickup_point_id", "value": "{{point_id}}"}]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "11 - Admin: Copies",
+      "item": [
+        {
+          "name": "POST /admin/copies (201, save id)",
+          "event": [
+            {"listen": "prerequest", "script": {"type": "text/javascript", "exec": [
+              "pm.collectionVariables.set('created_copy_number', 'POSTMAN-' + Date.now());"
+            ]}},
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 201', () => pm.response.to.have.status(201));",
+              "const r = pm.response.json();",
+              "pm.test('AVAILABLE at given point', () => {",
+              "  pm.expect(r.status).to.eql('AVAILABLE');",
+              "  pm.expect(r.current_point_id).to.eql(Number(pm.collectionVariables.get('point_id')));",
+              "});",
+              "pm.collectionVariables.set('created_copy_id', r.id);"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{admin_access_token}}", "type": "string"}]},
+            "method": "POST", "header": [],
+            "body": {"mode": "raw", "raw": "{\n  \"game_id\": {{game_id}},\n  \"current_point_id\": {{point_id}},\n  \"inventory_number\": \"{{created_copy_number}}\"\n}", "options": {"raw": {"language": "json"}}},
+            "url": {"raw": "{{base_url}}/admin/copies", "host": ["{{base_url}}"], "path": ["admin", "copies"]}
+          }
+        },
+        {
+          "name": "GET /admin/copies/{id}",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Inventory matches', () => pm.expect(pm.response.json().inventory_number).to.eql(pm.collectionVariables.get('created_copy_number')));"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{admin_access_token}}", "type": "string"}]},
+            "method": "GET", "header": [],
+            "url": {"raw": "{{base_url}}/admin/copies/{{created_copy_id}}", "host": ["{{base_url}}"], "path": ["admin", "copies", "{{created_copy_id}}"]}
+          }
+        },
+        {
+          "name": "GET /admin/copies?game_id=&point_id=",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Contains created copy', () => {",
+              "  const ids = pm.response.json().map(c => c.id);",
+              "  pm.expect(ids).to.include(Number(pm.collectionVariables.get('created_copy_id')));",
+              "});"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{admin_access_token}}", "type": "string"}]},
+            "method": "GET", "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/copies?game_id={{game_id}}&point_id={{point_id}}",
+              "host": ["{{base_url}}"], "path": ["admin", "copies"],
+              "query": [{"key": "game_id", "value": "{{game_id}}"}, {"key": "point_id", "value": "{{point_id}}"}]
+            }
+          }
+        },
+        {
+          "name": "PUT /admin/copies/{id}",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Inventory updated', () => pm.expect(pm.response.json().inventory_number).to.include('POSTMAN-UPD-'));"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{admin_access_token}}", "type": "string"}]},
+            "method": "PUT", "header": [],
+            "body": {"mode": "raw", "raw": "{\n  \"inventory_number\": \"POSTMAN-UPD-{{$timestamp}}\"\n}", "options": {"raw": {"language": "json"}}},
+            "url": {"raw": "{{base_url}}/admin/copies/{{created_copy_id}}", "host": ["{{base_url}}"], "path": ["admin", "copies", "{{created_copy_id}}"]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "12 - Admin: Clients",
+      "item": [
+        {
+          "name": "POST /admin/clients/{id}/deactivate",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('is_active=false', () => pm.expect(pm.response.json().is_active).to.equal(false));"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{admin_access_token}}", "type": "string"}]},
+            "method": "POST", "header": [],
+            "url": {"raw": "{{base_url}}/admin/clients/{{client_id}}/deactivate", "host": ["{{base_url}}"], "path": ["admin", "clients", "{{client_id}}", "deactivate"]}
+          }
+        },
+        {
+          "name": "GET /orders with deactivated client → 401",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 401', () => pm.response.to.have.status(401));"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{client_access_token}}", "type": "string"}]},
+            "method": "GET", "header": [],
+            "url": {"raw": "{{base_url}}/orders", "host": ["{{base_url}}"], "path": ["orders"]}
+          }
+        },
+        {
+          "name": "POST /admin/clients/{id}/activate",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('is_active=true', () => pm.expect(pm.response.json().is_active).to.equal(true));"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{admin_access_token}}", "type": "string"}]},
+            "method": "POST", "header": [],
+            "url": {"raw": "{{base_url}}/admin/clients/{{client_id}}/activate", "host": ["{{base_url}}"], "path": ["admin", "clients", "{{client_id}}", "activate"]}
+          }
+        },
+        {
+          "name": "GET /orders after reactivation → 200",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "pm.test('Status 200 (token valid again)', () => pm.response.to.have.status(200));"
+            ]}}
+          ],
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{client_access_token}}", "type": "string"}]},
+            "method": "GET", "header": [],
+            "url": {"raw": "{{base_url}}/orders", "host": ["{{base_url}}"], "path": ["orders"]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "13 - Cleanup",
+      "item": [
+        {
+          "name": "POST /auth/refresh (rotation, DPoP)",
+          "event": [
+            {"listen": "prerequest", "script": {"type": "text/javascript", "exec": [
+              "async function sign(htm, htu, nonce) {",
+              "    const jwk = JSON.parse(pm.collectionVariables.get('dpop_private_jwk'));",
+              "    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);",
+              "    const h = { typ: 'dpop+jwt', alg: 'ES256', jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y } };",
+              "    const p = { jti: [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''), htm: htm, htu: htu, iat: Math.floor(Date.now() / 1000) };",
+              "    if (nonce) p.nonce = nonce;",
+              "    const b64 = s => btoa(unescape(encodeURIComponent(s))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const b64buf = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const si = b64(JSON.stringify(h)) + '.' + b64(JSON.stringify(p));",
+              "    const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(si));",
+              "    return si + '.' + b64buf(sig);",
+              "}",
+              "const url = pm.variables.replaceIn(pm.request.url.toString());",
+              "const htu = url.split('?')[0].split('#')[0];",
+              "const proof = await sign(pm.request.method, htu, null);",
+              "pm.request.headers.add({ key: 'DPoP', value: proof });"
+            ]}},
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "async function sign(htm, htu, nonce) {",
+              "    const jwk = JSON.parse(pm.collectionVariables.get('dpop_private_jwk'));",
+              "    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);",
+              "    const h = { typ: 'dpop+jwt', alg: 'ES256', jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y } };",
+              "    const p = { jti: [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''), htm: htm, htu: htu, iat: Math.floor(Date.now() / 1000) };",
+              "    if (nonce) p.nonce = nonce;",
+              "    const b64 = s => btoa(unescape(encodeURIComponent(s))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const b64buf = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const si = b64(JSON.stringify(h)) + '.' + b64(JSON.stringify(p));",
+              "    const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(si));",
+              "    return si + '.' + b64buf(sig);",
+              "}",
+              "function post(url, headers, body) {",
+              "    return new Promise((resolve, reject) => pm.sendRequest({ url, method: 'POST', header: headers, body: { mode: 'raw', raw: body } }, (e, r) => e ? reject(e) : resolve(r)));",
+              "}",
+              "async function run() {",
+              "    let res = pm.response;",
+              "    if (res.code === 401 && res.headers.has('DPoP-Nonce')) {",
+              "        const nonce = res.headers.get('DPoP-Nonce');",
+              "        const url = pm.variables.replaceIn(pm.request.url.toString());",
+              "        const htu = url.split('?')[0].split('#')[0];",
+              "        const bodyStr = pm.variables.replaceIn(pm.request.body.raw);",
+              "        const proof = await sign(pm.request.method, htu, nonce);",
+              "        res = await post(url, { 'DPoP': proof, 'Content-Type': 'application/json' }, bodyStr);",
+              "    }",
+              "    pm.test('Status 200', () => pm.expect(res.code).to.equal(200));",
+              "    const b = res.json();",
+              "    pm.test('DPoP pair', () => pm.expect(b.token_type).to.eql('DPoP'));",
+              "    pm.test('New refresh differs', () => pm.expect(b.refresh_token).to.be.a('string'));",
+              "    pm.collectionVariables.set('refresh_token', b.refresh_token);",
+              "    pm.collectionVariables.set('client_access_token', b.access_token);",
+              "}",
+              "await run();"
+            ]}}
+          ],
+          "request": {
+            "method": "POST", "header": [],
+            "body": {"mode": "raw", "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}", "options": {"raw": {"language": "json"}}},
+            "url": {"raw": "{{base_url}}/auth/refresh", "host": ["{{base_url}}"], "path": ["auth", "refresh"]}
+          }
+        },
+        {
+          "name": "POST /auth/logout (204, DPoP)",
+          "event": [
+            {"listen": "prerequest", "script": {"type": "text/javascript", "exec": [
+              "async function sign(htm, htu, nonce) {",
+              "    const jwk = JSON.parse(pm.collectionVariables.get('dpop_private_jwk'));",
+              "    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);",
+              "    const h = { typ: 'dpop+jwt', alg: 'ES256', jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y } };",
+              "    const p = { jti: [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''), htm: htm, htu: htu, iat: Math.floor(Date.now() / 1000) };",
+              "    if (nonce) p.nonce = nonce;",
+              "    const b64 = s => btoa(unescape(encodeURIComponent(s))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const b64buf = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const si = b64(JSON.stringify(h)) + '.' + b64(JSON.stringify(p));",
+              "    const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(si));",
+              "    return si + '.' + b64buf(sig);",
+              "}",
+              "const url = pm.variables.replaceIn(pm.request.url.toString());",
+              "const htu = url.split('?')[0].split('#')[0];",
+              "const proof = await sign(pm.request.method, htu, null);",
+              "pm.request.headers.add({ key: 'DPoP', value: proof });"
+            ]}},
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "async function sign(htm, htu, nonce) {",
+              "    const jwk = JSON.parse(pm.collectionVariables.get('dpop_private_jwk'));",
+              "    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);",
+              "    const h = { typ: 'dpop+jwt', alg: 'ES256', jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y } };",
+              "    const p = { jti: [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''), htm: htm, htu: htu, iat: Math.floor(Date.now() / 1000) };",
+              "    if (nonce) p.nonce = nonce;",
+              "    const b64 = s => btoa(unescape(encodeURIComponent(s))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const b64buf = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const si = b64(JSON.stringify(h)) + '.' + b64(JSON.stringify(p));",
+              "    const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(si));",
+              "    return si + '.' + b64buf(sig);",
+              "}",
+              "function post(url, headers, body) {",
+              "    return new Promise((resolve, reject) => pm.sendRequest({ url, method: 'POST', header: headers, body: { mode: 'raw', raw: body } }, (e, r) => e ? reject(e) : resolve(r)));",
+              "}",
+              "async function run() {",
+              "    let res = pm.response;",
+              "    if (res.code === 401 && res.headers.has('DPoP-Nonce')) {",
+              "        const nonce = res.headers.get('DPoP-Nonce');",
+              "        const url = pm.variables.replaceIn(pm.request.url.toString());",
+              "        const htu = url.split('?')[0].split('#')[0];",
+              "        const bodyStr = pm.variables.replaceIn(pm.request.body.raw);",
+              "        const proof = await sign(pm.request.method, htu, nonce);",
+              "        res = await post(url, { 'DPoP': proof, 'Content-Type': 'application/json' }, bodyStr);",
+              "    }",
+              "    pm.test('Status 204', () => pm.expect(res.code).to.equal(204));",
+              "}",
+              "await run();"
+            ]}}
+          ],
+          "request": {
+            "method": "POST", "header": [],
+            "body": {"mode": "raw", "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}", "options": {"raw": {"language": "json"}}},
+            "url": {"raw": "{{base_url}}/auth/logout", "host": ["{{base_url}}"], "path": ["auth", "logout"]}
+          }
+        },
+        {
+          "name": "POST /auth/refresh after logout → 401 (DPoP)",
+          "event": [
+            {"listen": "prerequest", "script": {"type": "text/javascript", "exec": [
+              "async function sign(htm, htu, nonce) {",
+              "    const jwk = JSON.parse(pm.collectionVariables.get('dpop_private_jwk'));",
+              "    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);",
+              "    const h = { typ: 'dpop+jwt', alg: 'ES256', jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y } };",
+              "    const p = { jti: [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''), htm: htm, htu: htu, iat: Math.floor(Date.now() / 1000) };",
+              "    if (nonce) p.nonce = nonce;",
+              "    const b64 = s => btoa(unescape(encodeURIComponent(s))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const b64buf = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const si = b64(JSON.stringify(h)) + '.' + b64(JSON.stringify(p));",
+              "    const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(si));",
+              "    return si + '.' + b64buf(sig);",
+              "}",
+              "const url = pm.variables.replaceIn(pm.request.url.toString());",
+              "const htu = url.split('?')[0].split('#')[0];",
+              "const proof = await sign(pm.request.method, htu, null);",
+              "pm.request.headers.add({ key: 'DPoP', value: proof });"
+            ]}},
+            {"listen": "test", "script": {"type": "text/javascript", "exec": [
+              "async function sign(htm, htu, nonce) {",
+              "    const jwk = JSON.parse(pm.collectionVariables.get('dpop_private_jwk'));",
+              "    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);",
+              "    const h = { typ: 'dpop+jwt', alg: 'ES256', jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y } };",
+              "    const p = { jti: [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''), htm: htm, htu: htu, iat: Math.floor(Date.now() / 1000) };",
+              "    if (nonce) p.nonce = nonce;",
+              "    const b64 = s => btoa(unescape(encodeURIComponent(s))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const b64buf = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+              "    const si = b64(JSON.stringify(h)) + '.' + b64(JSON.stringify(p));",
+              "    const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(si));",
+              "    return si + '.' + b64buf(sig);",
+              "}",
+              "function post(url, headers, body) {",
+              "    return new Promise((resolve, reject) => pm.sendRequest({ url, method: 'POST', header: headers, body: { mode: 'raw', raw: body } }, (e, r) => e ? reject(e) : resolve(r)));",
+              "}",
+              "async function run() {",
+              "    let res = pm.response;",
+              "    if (res.code === 401 && res.headers.has('DPoP-Nonce')) {",
+              "        const nonce = res.headers.get('DPoP-Nonce');",
+              "        const url = pm.variables.replaceIn(pm.request.url.toString());",
+              "        const htu = url.split('?')[0].split('#')[0];",
+              "        const bodyStr = pm.variables.replaceIn(pm.request.body.raw);",
+              "        const proof = await sign(pm.request.method, htu, nonce);",
+              "        res = await post(url, { 'DPoP': proof, 'Content-Type': 'application/json' }, bodyStr);",
+              "    }",
+              "    pm.test('Status 401 (refresh revoked)', () => pm.expect(res.code).to.equal(401));",
+              "}",
+              "await run();"
+            ]}}
+          ],
+          "request": {
+            "method": "POST", "header": [],
+            "body": {"mode": "raw", "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}", "options": {"raw": {"language": "json"}}},
+            "url": {"raw": "{{base_url}}/auth/refresh", "host": ["{{base_url}}"], "path": ["auth", "refresh"]}
+          }
+        }
+      ]
+    }
+  ]
+}

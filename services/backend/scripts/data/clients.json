@@ -1,0 +1,14 @@
+[
+  {"email": "client.ivan@bgrent.io", "password": "demo-password", "full_name": "Иван Петров", "phone": "+7 900 222-00-01", "is_active": true},
+  {"email": "client.maria@bgrent.io", "password": "demo-password", "full_name": "Мария Сидорова", "phone": "+7 900 222-00-02", "is_active": true},
+  {"email": "client.petr@bgrent.io", "password": "demo-password", "full_name": "Пётр Иванов", "phone": "+7 900 222-00-03", "is_active": true},
+  {"email": "client.anna@bgrent.io", "password": "demo-password", "full_name": "Анна Смирнова", "phone": "+7 900 222-00-04", "is_active": true},
+  {"email": "client.dmitry@bgrent.io", "password": "demo-password", "full_name": "Дмитрий Кузнецов", "phone": "+7 900 222-00-05", "is_active": true},
+  {"email": "client.olga@bgrent.io", "password": "demo-password", "full_name": "Ольга Попова", "phone": "+7 900 222-00-06", "is_active": true},
+  {"email": "client.sergey@bgrent.io", "password": "demo-password", "full_name": "Сергей Соколов", "phone": "+7 900 222-00-07", "is_active": true},
+  {"email": "client.tatiana@bgrent.io", "password": "demo-password", "full_name": "Татьяна Лебедева", "phone": "+7 900 222-00-08", "is_active": true},
+  {"email": "client.alexey@bgrent.io", "password": "demo-password", "full_name": "Алексей Козлов", "phone": "+7 900 222-00-09", "is_active": true},
+  {"email": "client.ekaterina@bgrent.io", "password": "demo-password", "full_name": "Екатерина Новикова", "phone": "+7 900 222-00-10", "is_active": true},
+  {"email": "client.nikolay@bgrent.io", "password": "demo-password", "full_name": "Николай Морозов", "phone": "+7 900 222-00-11", "is_active": true},
+  {"email": "client.inactive@bgrent.io", "password": "demo-password", "full_name": "Заблокированный Клиент", "phone": "+7 900 222-00-12", "is_active": false}
+]

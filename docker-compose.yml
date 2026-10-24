@@ -3,17 +3,33 @@ services:
     image: postgres:18
     container_name: boardgame_postgres
     restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m
+      - /var/run/postgresql:rw,nosuid,size=64m
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+      - DAC_OVERRIDE
+    security_opt:
+      - no-new-privileges:true
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
       PGDATA: /var/lib/postgresql/data/pgdata
+      MIGRATION_USER_PASSWORD: ${MIGRATION_USER_PASSWORD}
+      APP_USER_PASSWORD: ${APP_USER_PASSWORD}
     ports:
       - "${POSTGRES_HOST_PORT:-5433}:5432"
     volumes:
       - boardgame_pg_data:/var/lib/postgresql
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
     networks:
-      - boardgame_net
+      - boardgame_backend
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
@@ -25,21 +41,30 @@ services:
     image: rustfs/rustfs:1.0.0
     container_name: boardgame_rustfs
     restart: unless-stopped
-    command: /data --console-address ":9001"
-    env_file:
-      - .env
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     environment:
       RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY}
       RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY}
+      RUSTFS_CHECK_UPDATE: "false"
+    command: ["/data", "--console-address", ":9001"]
     ports:
       - "${RUSTFS_API_PORT:-9000}:9000"
       - "${RUSTFS_CONSOLE_PORT:-9001}:9001"
     volumes:
       - boardgame_rustfs_data:/data
+      - boardgame_rustfs_logs:/logs
     networks:
-      - boardgame_net
+      - boardgame_frontend
+      - boardgame_backend
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/health && curl -f http://localhost:9001/rustfs/console/health"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -49,107 +74,251 @@ services:
     image: rustfs/rc:latest
     container_name: boardgame_rustfs_init
     restart: "no"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY}
+      RUSTFS_APP_ACCESS_KEY: ${RUSTFS_APP_ACCESS_KEY}
+      RUSTFS_APP_SECRET_KEY: ${RUSTFS_APP_SECRET_KEY}
+    entrypoint: ["/bin/sh", "/scripts/init.sh"]
+    volumes:
+      - ./infra/rustfs/policies:/policies:ro
+      - ./infra/rustfs/init.sh:/scripts/init.sh:ro
+    networks:
+      - boardgame_backend
     depends_on:
       rustfs:
         condition: service_healthy
-    env_file:
-      - .env
-    networks:
-      - boardgame_net
+
+  redis:
+    image: redis:7-alpine
+    container_name: boardgame_redis
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /run/redis:rw,nosuid,noexec,size=1m
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      REDIS_APP_USER: ${REDIS_APP_USER}
+      REDIS_APP_PASSWORD: ${REDIS_APP_PASSWORD}
+      REDIS_ADMIN_USER: ${REDIS_ADMIN_USER}
+      REDIS_ADMIN_PASSWORD: ${REDIS_ADMIN_PASSWORD}
+    entrypoint: ["/bin/sh", "/usr/local/bin/redis-entrypoint.sh"]
+    ports:
+      - "${REDIS_HOST_PORT:-6379}:6379"
     volumes:
-      - ./infra/rustfs/policies:/policies:ro
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        set -e
-        rc alias set local http://rustfs:9000 "$$RUSTFS_ACCESS_KEY" "$$RUSTFS_SECRET_KEY"
-
-        rc mb --ignore-existing local/board-game-covers
-        rc anonymous set download local/board-game-covers
-
-        rc admin policy create local covers-write /policies/board-game-covers-write.json 2>/dev/null || true
-
-        rc admin service-account create local/ "$$RUSTFS_APP_ACCESS_KEY" "$$RUSTFS_APP_SECRET_KEY" --policy /policies/board-game-covers-write.json 2>/dev/null || true
-
-        echo "RustFS init done"
-        rc anonymous get local/board-game-covers
-        rc admin service-account ls local
+      - boardgame_redis_data:/data
+      - ./infra/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - ./infra/redis/redis-entrypoint.sh:/usr/local/bin/redis-entrypoint.sh:ro
+    networks:
+      - boardgame_backend
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning --user \"$$REDIS_APP_USER\" -a \"$$REDIS_APP_PASSWORD\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
 
   migrate:
     build:
-      context: ./backend
+      context: ./services/backend
       dockerfile: Dockerfile
+      target: runtime
     container_name: boardgame_migrate
     restart: "no"
-    env_file:
-      - .env
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     environment:
+      POSTGRES_USER: migration_user
+      POSTGRES_PASSWORD: ${MIGRATION_USER_PASSWORD}
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB}
+    entrypoint: ["alembic", "upgrade", "head"]
     networks:
-      - boardgame_net
+      - boardgame_backend
     depends_on:
       postgres:
         condition: service_healthy
-    command: ["alembic", "upgrade", "head"]
-  
+
   backend:
     build:
-      context: ./backend
+      context: ./services/backend
       dockerfile: Dockerfile
+      target: runtime
     container_name: boardgame_backend
     restart: unless-stopped
-    env_file:
-      - .env
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      POSTGRES_USER: app_user
+      POSTGRES_PASSWORD: ${APP_USER_PASSWORD}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB}
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      S3_BUCKET: ${S3_BUCKET}
+      S3_SECURE: ${S3_SECURE}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
+      UPLOAD_MAX_BYTES: ${UPLOAD_MAX_BYTES}
+      UPLOAD_ALLOWED_MIME_TYPES: ${UPLOAD_ALLOWED_MIME_TYPES}
+      REDIS_URL: "redis://${REDIS_APP_USER}:${REDIS_APP_PASSWORD}@redis:6379/0"
+      CATALOG_CACHE_TTL: ${CATALOG_CACHE_TTL}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ALGORITHM: ${JWT_ALGORITHM}
+      ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL}
+      REFRESH_TOKEN_TTL: ${REFRESH_TOKEN_TTL}
+      DPOP_IAT_WINDOW_SECONDS: ${DPOP_IAT_WINDOW_SECONDS}
+      DPOP_JTI_TTL_SECONDS: ${DPOP_JTI_TTL_SECONDS}
+      DPOP_REQUIRE_NONCE: ${DPOP_REQUIRE_NONCE}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     networks:
-      - boardgame_net
+      - boardgame_frontend
+      - boardgame_backend
     depends_on:
       postgres:
         condition: service_healthy
-      rustfs:
+      rustfs-init:
+        condition: service_completed_successfully
+      redis:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 10s
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      interval: 30s
       timeout: 5s
-      retries: 5
+      retries: 3
       start_period: 15s
+    stop_grace_period: 35s
 
   backend-test:
     build:
-      context: ./backend
-      dockerfile: Dockerfile.test
+      context: ./services/backend
+      dockerfile: Dockerfile
+      target: test
+    container_name: boardgame_backend_test
+    restart: "no"
     profiles: ["test"]
-    env_file:
-      - .env
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     environment:
+      POSTGRES_USER: app_user
+      POSTGRES_PASSWORD: ${APP_USER_PASSWORD}
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
-    volumes:
-      - ./backend:/app
-      - /app/.venv
+      POSTGRES_DB: ${POSTGRES_DB}
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      S3_BUCKET: ${S3_BUCKET}
+      S3_SECURE: ${S3_SECURE}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
+      UPLOAD_MAX_BYTES: ${UPLOAD_MAX_BYTES}
+      UPLOAD_ALLOWED_MIME_TYPES: ${UPLOAD_ALLOWED_MIME_TYPES}
+      REDIS_URL: "redis://${REDIS_APP_USER}:${REDIS_APP_PASSWORD}@redis:6379/0"
+      CATALOG_CACHE_TTL: ${CATALOG_CACHE_TTL}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ALGORITHM: ${JWT_ALGORITHM}
+      ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL}
+      REFRESH_TOKEN_TTL: ${REFRESH_TOKEN_TTL}
+      DPOP_IAT_WINDOW_SECONDS: ${DPOP_IAT_WINDOW_SECONDS}
+      DPOP_JTI_TTL_SECONDS: ${DPOP_JTI_TTL_SECONDS}
+      DPOP_REQUIRE_NONCE: ${DPOP_REQUIRE_NONCE}
     networks:
-      - boardgame_net
+      - boardgame_backend
     depends_on:
       postgres:
         condition: service_healthy
-      rustfs:
+      rustfs-init:
+        condition: service_completed_successfully
+      redis:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
-    restart: "no"
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: boardgame_nginx
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx:rw,noexec,nosuid,size=64m
+      - /var/run:rw,noexec,nosuid,size=16m
+      - /tmp:rw,noexec,nosuid,size=16m
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "${NGINX_HTTP_PORT:-80}:80"
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - boardgame_frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+      rustfs:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    stop_grace_period: 35s
 
 volumes:
   boardgame_pg_data:
     name: boardgame_pg_data
   boardgame_rustfs_data:
     name: boardgame_rustfs_data
+  boardgame_rustfs_logs:
+    name: boardgame_rustfs_logs
+  boardgame_redis_data:
+    name: boardgame_redis_data
 
 networks:
-  boardgame_net:
-    name: boardgame_net
+  boardgame_backend:
+    name: boardgame_backend
+    driver: bridge
+  boardgame_frontend:
+    name: boardgame_frontend
     driver: bridge
