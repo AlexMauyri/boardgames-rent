@@ -108,8 +108,6 @@ services:
       - SETUID
     security_opt:
       - no-new-privileges:true
-    env_file:
-      - .env
     environment:
       REDIS_APP_USER: ${REDIS_APP_USER}
       REDIS_APP_PASSWORD: ${REDIS_APP_PASSWORD}

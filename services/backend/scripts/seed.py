@@ -141,8 +141,16 @@ async def set_cover_key(
 
 
 async def reset_database(session: AsyncSession) -> None:
-    """Delete every row and restart the id counters."""
-    tables = ", ".join(t.name for t in Base.metadata.sorted_tables)
+    """Delete every row and restart the id counters.
+
+    Uses ``Table.fullname`` (``schema.table``) rather than ``Table.name`` so
+    the TRUNCATE hits the right schema regardless of the connection's
+    ``search_path``.
+    """
+    tables = ", ".join(
+        f'"{t.schema}"."{t.name}"' if t.schema else f'"{t.name}"'
+        for t in Base.metadata.sorted_tables
+    )
     await session.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
     await session.commit()
 
