@@ -36,6 +36,8 @@
     {"key": "created_copy_id", "value": ""},
     {"key": "created_copy_number", "value": ""},
     {"key": "cover_file_path", "value": ""},
+    {"key": "similar_game_id", "value": ""},
+    {"key": "personal_rec_count", "value": ""},
     {"key": "dpop_private_jwk", "value": "{\"kty\": \"EC\", \"crv\": \"P-256\", \"x\": \"QmKMTqO3zPYIPOl5jgypsMr70Vl-m8gbIb0xVQS2Tis\", \"y\": \"x0MLLFdb5X_-g_QWnZ22q9UcK98-gRVbGV1Ski4Ha2w\", \"d\": \"LEM_0jUHde0-JzRPgYoOlSJstZwnjBVJSJFuLOachBw\"}"}
   ],
   "item": [
@@ -1241,6 +1243,266 @@
             "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{client_access_token}}", "type": "string"}]},
             "method": "GET", "header": [],
             "url": {"raw": "{{base_url}}/orders", "host": ["{{base_url}}"], "path": ["orders"]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "14 - Recommendations",
+      "item": [
+        {
+          "name": "GET /catalog/games/{id}/similar",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('similar_game_id', pm.collectionVariables.get('game_id') || '');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const arr = pm.response.json();",
+                  "pm.test('Body is array', () => pm.expect(arr).to.be.an('array'));",
+                  "pm.test('Items have game and reason', () => {",
+                  "  arr.forEach(item => {",
+                  "    pm.expect(item).to.include.keys('game', 'reason');",
+                  "    pm.expect(item.game).to.include.keys('id', 'title', 'daily_price');",
+                  "    pm.expect(['bought_together', 'similar']).to.include(item.reason);",
+                  "  });",
+                  "});",
+                  "pm.test('No unavailable games', () => {",
+                  "  arr.forEach(item => {",
+                  "    pm.expect(item.game.id).to.be.a('number');",
+                  "  });",
+                  "});",
+                  "pm.test('Respects limit', () => {",
+                  "  pm.expect(arr.length).to.be.at.most(10);",
+                  "});",
+                  "pm.test('Does not recommend the target itself', () => {",
+                  "  const target = Number(pm.collectionVariables.get('similar_game_id'));",
+                  "  arr.forEach(item => pm.expect(item.game.id).to.not.eql(target));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/catalog/games/{{game_id}}/similar?limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["catalog", "games", "{{game_id}}", "similar"],
+              "query": [{"key": "limit", "value": "10"}]
+            }
+          }
+        },
+        {
+          "name": "GET /catalog/games/{id}/similar (custom limit)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const arr = pm.response.json();",
+                  "pm.test('Respects custom limit', () => pm.expect(arr.length).to.be.at.most(3));",
+                  "pm.test('Items have reason', () => {",
+                  "  arr.forEach(item => pm.expect(item).to.have.property('reason'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/catalog/games/{{game_id}}/similar?limit=3",
+              "host": ["{{base_url}}"],
+              "path": ["catalog", "games", "{{game_id}}", "similar"],
+              "query": [{"key": "limit", "value": "3"}]
+            }
+          }
+        },
+        {
+          "name": "GET /catalog/games/{unknown}/similar → 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/catalog/games/999999/similar",
+              "host": ["{{base_url}}"],
+              "path": ["catalog", "games", "999999", "similar"]
+            }
+          }
+        },
+        {
+          "name": "GET /catalog/games/{id}/similar (invalid limit → 422)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/catalog/games/{{game_id}}/similar?limit=0",
+              "host": ["{{base_url}}"],
+              "path": ["catalog", "games", "{{game_id}}", "similar"],
+              "query": [{"key": "limit", "value": "0"}]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "15 - Recommendations (personal)",
+      "item": [
+        {
+          "name": "GET /recommendations/personal (with client token)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const arr = pm.response.json();",
+                  "pm.test('Body is array', () => pm.expect(arr).to.be.an('array'));",
+                  "pm.collectionVariables.set('personal_rec_count', arr.length);",
+                  "pm.test('Items have game and reason', () => {",
+                  "  arr.forEach(item => {",
+                  "    pm.expect(item).to.include.keys('game', 'reason');",
+                  "    pm.expect(item.game).to.include.keys('id', 'title', 'daily_price');",
+                  "    pm.expect(['bought_together', 'similar', 'fallback_popular']).to.include(item.reason);",
+                  "  });",
+                  "});",
+                  "pm.test('Respects limit', () => pm.expect(arr.length).to.be.at.most(10));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{client_access_token}}", "type": "string"}]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/recommendations/personal?limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["recommendations", "personal"],
+              "query": [{"key": "limit", "value": "10"}]
+            }
+          }
+        },
+        {
+          "name": "GET /recommendations/personal (custom limit)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const arr = pm.response.json();",
+                  "pm.test('Respects custom limit', () => pm.expect(arr.length).to.be.at.most(3));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{client_access_token}}", "type": "string"}]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/recommendations/personal?limit=3",
+              "host": ["{{base_url}}"],
+              "path": ["recommendations", "personal"],
+              "query": [{"key": "limit", "value": "3"}]
+            }
+          }
+        },
+        {
+          "name": "GET /recommendations/personal without auth → 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/recommendations/personal",
+              "host": ["{{base_url}}"],
+              "path": ["recommendations", "personal"]
+            }
+          }
+        },
+        {
+          "name": "GET /recommendations/personal (invalid limit → 422)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{"key": "token", "value": "{{client_access_token}}", "type": "string"}]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/recommendations/personal?limit=0",
+              "host": ["{{base_url}}"],
+              "path": ["recommendations", "personal"],
+              "query": [{"key": "limit", "value": "0"}]
+            }
           }
         }
       ]
