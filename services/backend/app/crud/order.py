@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.crud.base import CRUDBase
-from app.db.models import Order, OrderItem
+from app.db.models import GameCopy, Order, OrderItem
 
 OPEN_STATUSES = (
     "CREATED",
@@ -129,6 +129,25 @@ class CRUDOrder(CRUDBase[Order]):
         session.add(obj)
         await session.flush()
         return obj
+
+    async def get_active_game_ids(
+        self,
+        session: AsyncSession,
+        client_id: int,
+    ) -> list[int]:
+        """Return distinct catalog game ids from the client's open orders."""
+        stmt = (
+            select(GameCopy.game_id)
+            .distinct()
+            .join(OrderItem, OrderItem.game_copy_id == GameCopy.id)
+            .join(Order, Order.id == OrderItem.order_id)
+            .where(
+                Order.client_id == client_id,
+                Order.status.in_(OPEN_STATUSES),
+            )
+        )
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
 
 
 order = CRUDOrder(Order)
