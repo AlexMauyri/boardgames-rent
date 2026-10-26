@@ -238,8 +238,13 @@ services:
       POSTGRES_PORT: 5432
       POSTGRES_DB: ${POSTGRES_DB}
       GRPC_PORT: 50051
+      GRPC_SERVER_KEY_PATH: ${GRPC_SERVER_KEY_PATH}
+      GRPC_SERVER_CERT_PATH: ${GRPC_SERVER_CERT_PATH}
+      GRPC_CA_CERT_PATH: ${GRPC_CA_CERT_PATH}
     ports:
       - "${GRPC_PORT:-50051}:50051"
+    volumes:
+      - ./infra/grpc_certs:/app/certs:ro
     networks:
       - boardgame_backend
     depends_on:

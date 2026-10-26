@@ -13,10 +13,21 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+SERVER_KEY_PATH = os.environ.get("GRPC_SERVER_KEY_PATH", "/app/certs/server.key")
+SERVER_CERT_PATH = os.environ.get("GRPC_SERVER_CERT_PATH", "/app/certs/server.crt")
+
 
 def serve() -> None:
-    """Start the gRPC server with only the standard health service."""
     port = os.environ.get("GRPC_PORT", "50051")
+
+    with open(SERVER_KEY_PATH, "rb") as f:
+        private_key = f.read()
+    with open(SERVER_CERT_PATH, "rb") as f:
+        certificate_chain = f.read()
+
+    server_credentials = grpc.ssl_server_credentials(
+        ((private_key, certificate_chain),)
+    )
 
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
 
@@ -24,9 +35,9 @@ def serve() -> None:
     health_pb2_grpc.add_HealthServicer_to_server(health_servicer, server)
     health_servicer.set("", health_pb2.HealthCheckResponse.SERVING)
 
-    server.add_insecure_port(f"[::]:{port}")
+    server.add_secure_port(f"[::]:{port}", server_credentials)
     server.start()
-    logger.info("gRPC recommendation service listening on :%s", port)
+    logger.info("gRPC recommendation service listening securely on :%s", port)
     server.wait_for_termination()
 
 
