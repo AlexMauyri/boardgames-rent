@@ -26,7 +26,6 @@ def main() -> int:
             resp = stub.Check(health_pb2.HealthCheckRequest(), timeout=2.0)
         except grpc.RpcError:
             return 1
-
         return 0 if resp.status == health_pb2.HealthCheckResponse.SERVING else 1
 
 

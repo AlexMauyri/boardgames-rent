@@ -221,6 +221,7 @@ services:
     build:
       context: ./services/grpc
       dockerfile: Dockerfile
+      target: runtime
     container_name: boardgame_grpc
     restart: unless-stopped
     init: true
@@ -234,13 +235,17 @@ services:
     environment:
       POSTGRES_USER: reader_user
       POSTGRES_PASSWORD: ${READER_USER_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
-      POSTGRES_DB: ${POSTGRES_DB}
       GRPC_PORT: 50051
-      GRPC_SERVER_KEY_PATH: ${GRPC_SERVER_KEY_PATH}
-      GRPC_SERVER_CERT_PATH: ${GRPC_SERVER_CERT_PATH}
-      GRPC_CA_CERT_PATH: ${GRPC_CA_CERT_PATH}
+      GRPC_SERVER_KEY_PATH: /app/certs/server.key
+      GRPC_SERVER_CERT_PATH: /app/certs/server.crt
+      GRPC_CA_CERT_PATH: /app/certs/ca.crt
+      GRPC_DEFAULT_LIMIT: ${GRPC_DEFAULT_LIMIT:-10}
+      GRPC_MAX_CANDIDATES: ${GRPC_MAX_CANDIDATES:-300}
+      GRPC_MAX_HISTORY_GAMES: ${GRPC_MAX_HISTORY_GAMES:-20}
+      GRPC_QUERY_TIMEOUT_SECONDS: ${GRPC_QUERY_TIMEOUT_SECONDS:-3.0}
     ports:
       - "${GRPC_PORT:-50051}:50051"
     volumes:
@@ -307,6 +312,39 @@ services:
       rustfs-init:
         condition: service_completed_successfully
       redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  grpc-test:
+    build:
+      context: ./services/grpc
+      dockerfile: Dockerfile
+      target: test
+    container_name: boardgame_grpc_test
+    restart: "no"
+    profiles: ["test"]
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      POSTGRES_USER: app_user
+      POSTGRES_PASSWORD: ${APP_USER_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      APP_USER_PASSWORD: ${APP_USER_PASSWORD}
+      READER_USER_PASSWORD: ${READER_USER_PASSWORD}
+      GRPC_PORT: 50051
+    networks:
+      - boardgame_backend
+    depends_on:
+      postgres:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
