@@ -23,6 +23,7 @@ services:
       PGDATA: /var/lib/postgresql/data/pgdata
       MIGRATION_USER_PASSWORD: ${MIGRATION_USER_PASSWORD}
       APP_USER_PASSWORD: ${APP_USER_PASSWORD}
+      READER_USER_PASSWORD: ${READER_USER_PASSWORD}
     ports:
       - "${POSTGRES_HOST_PORT:-5433}:5432"
     volumes:
@@ -215,6 +216,44 @@ services:
       retries: 3
       start_period: 15s
     stop_grace_period: 35s
+
+  grpc:
+    build:
+      context: ./services/grpc
+      dockerfile: Dockerfile
+    container_name: boardgame_grpc
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      POSTGRES_USER: reader_user
+      POSTGRES_PASSWORD: ${READER_USER_PASSWORD}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB}
+      GRPC_PORT: 50051
+    ports:
+      - "${GRPC_PORT:-50051}:50051"
+    networks:
+      - boardgame_backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.health_check"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    stop_grace_period: 15s
 
   backend-test:
     build:
