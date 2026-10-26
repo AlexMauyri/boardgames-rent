@@ -56,6 +56,19 @@ class Settings(BaseSettings):
     redis_url: str = Field(alias="REDIS_URL")
     catalog_cache_ttl: int = Field(default=600, alias="CATALOG_CACHE_TTL")
 
+    grpc_recommendation_addr: str = Field(
+        default="recommendation-grpc:50051",
+        alias="GRPC_RECOMMENDATION_ADDR",
+    )
+    grpc_ca_cert_path: str = Field(
+        default="/app/certs/ca.crt",
+        alias="GRPC_CA_CERT_PATH",
+    )
+    grpc_timeout_seconds: float = Field(
+        default=2.0,
+        alias="GRPC_TIMEOUT_SECONDS",
+    )
+
     jwt_secret: str = Field(alias="JWT_SECRET")
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
     access_token_ttl: int = Field(default=900, alias="ACCESS_TOKEN_TTL")

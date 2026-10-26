@@ -13,6 +13,7 @@ from app.crud import employee as employee_crud
 from app.db.models import Client, Employee
 from app.db.session import get_session
 from app.storage.client import get_storage_client
+from app.integrations.grpc.recommendation_client import RecommendationClient
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -91,6 +92,11 @@ async def get_current_employee(
     return row
 
 
+def get_recommendation_client(request: Request) -> RecommendationClient:
+    """Return the shared recommendation gRPC client from app.state."""
+    return request.app.state.recommendation_client
+
+
 def require_role(*roles: str):
     """Build a dependency that requires an active employee with one of `roles`.
 
@@ -124,4 +130,5 @@ __all__ = [
     "get_session",
     "get_redis",
     "get_storage_client",
+    "get_recommendation_client",
 ]

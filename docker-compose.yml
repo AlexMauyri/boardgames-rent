@@ -195,8 +195,13 @@ services:
       DPOP_IAT_WINDOW_SECONDS: ${DPOP_IAT_WINDOW_SECONDS}
       DPOP_JTI_TTL_SECONDS: ${DPOP_JTI_TTL_SECONDS}
       DPOP_REQUIRE_NONCE: ${DPOP_REQUIRE_NONCE}
+      GRPC_RECOMMENDATION_ADDR: ${GRPC_RECOMMENDATION_ADDR}
+      GRPC_CA_CERT_PATH: ${GRPC_CA_CERT_PATH}
+      GRPC_TIMEOUT_SECONDS: ${GRPC_TIMEOUT_SECONDS}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - ./infra/grpc_certs:/app/certs:ro
     networks:
       - boardgame_frontend
       - boardgame_backend
@@ -209,6 +214,8 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      grpc:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
       interval: 30s
@@ -304,6 +311,11 @@ services:
       DPOP_IAT_WINDOW_SECONDS: ${DPOP_IAT_WINDOW_SECONDS}
       DPOP_JTI_TTL_SECONDS: ${DPOP_JTI_TTL_SECONDS}
       DPOP_REQUIRE_NONCE: ${DPOP_REQUIRE_NONCE}
+      GRPC_RECOMMENDATION_ADDR: ${GRPC_RECOMMENDATION_ADDR}
+      GRPC_CA_CERT_PATH: ${GRPC_CA_CERT_PATH}
+      GRPC_TIMEOUT_SECONDS: ${GRPC_TIMEOUT_SECONDS}
+    volumes:
+      - ./infra/grpc_certs:/app/certs:ro
     networks:
       - boardgame_backend
     depends_on:
@@ -315,6 +327,8 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      grpc:
+        condition: service_healthy
 
   grpc-test:
     build:
