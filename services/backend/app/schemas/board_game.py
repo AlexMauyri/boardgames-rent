@@ -148,3 +148,15 @@ class GameSearchItem(BaseModel):
     game: BoardGameRead
     free_at_point: int
     free_elsewhere: int
+
+class SimilarGameItem(BaseModel):
+    """A recommended game with the reason it was suggested.
+
+    Attributes:
+        game: The catalog entry.
+        reason: Why the recommendation engine picked it; one of
+            ``bought_together`` or ``similar``.
+    """
+
+    game: BoardGameRead
+    reason: str

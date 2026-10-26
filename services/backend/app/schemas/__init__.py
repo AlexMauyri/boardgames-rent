@@ -7,6 +7,7 @@ from app.schemas.board_game import (
     BoardGameUpdate,
     CoverUploadResponse,
     GameSearchItem,
+    SimilarGameItem,
 )
 from app.schemas.category import CategoryCreate, CategoryRead, CategoryUpdate
 from app.schemas.client import ClientCreate, ClientRead, ClientUpdate
@@ -51,6 +52,7 @@ __all__ = [
     "BoardGameUpdate",
     "CoverUploadResponse",
     "GameSearchItem",
+    "SimilarGameItem",
     "CategoryCreate",
     "CategoryRead",
     "CategoryUpdate",
