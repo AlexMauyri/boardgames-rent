@@ -7,6 +7,7 @@ from app.schemas.board_game import (
     BoardGameUpdate,
     CoverUploadResponse,
     GameSearchItem,
+    MatchedGameItem,
     SimilarGameItem,
 )
 from app.schemas.category import CategoryCreate, CategoryRead, CategoryUpdate
@@ -37,6 +38,7 @@ from app.schemas.order import (
     OrderReturnCreate,
     OrderReturnResult,
     OrderStatus,
+    PriceQuoteRead,
 )
 from app.schemas.pickup_point import (
     PickupPointCreate,
@@ -52,6 +54,7 @@ __all__ = [
     "BoardGameUpdate",
     "CoverUploadResponse",
     "GameSearchItem",
+    "MatchedGameItem",
     "SimilarGameItem",
     "CategoryCreate",
     "CategoryRead",
@@ -79,6 +82,7 @@ __all__ = [
     "OrderReturnCreate",
     "OrderReturnResult",
     "OrderStatus",
+    "PriceQuoteRead",
     "PickupPointCreate",
     "PickupPointRead",
     "PickupPointUpdate",

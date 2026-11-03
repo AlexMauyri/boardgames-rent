@@ -12,16 +12,19 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
+    get_matching_client,
     get_redis,
     get_recommendation_client,
     get_session,
 )
 from app.crud import board_game, game_copy
+from app.integrations.grpc.matching_client import MatchingClient
 from app.integrations.grpc.recommendation_client import RecommendationClient
 from app.schemas import (
     BoardGameRead,
     CategoryRead,
     GameSearchItem,
+    MatchedGameItem,
     PickupPointRead,
     SimilarGameItem,
 )
@@ -112,6 +115,32 @@ async def search_available_games(
         category_id=category_id,
         skip=skip,
         limit=limit,
+    )
+
+
+@router.get("/match", response_model=list[MatchedGameItem])
+async def match_games(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    matching_client: Annotated[MatchingClient | None, Depends(get_matching_client)],
+    pickup_point_id: int = Query(...),
+    players: int = Query(..., ge=1),
+    playtime_max: int = Query(..., ge=1),
+    category_ids: Annotated[list[int] | None, Query()] = None,
+    limit: int = Query(10, ge=1),
+) -> list[MatchedGameItem]:
+    """Pick games for a meeting: players, time and (optionally) categories.
+
+    Candidates are ranked by the gRPC matching service; games collectable at
+    the pickup point rank above those that need a delivery.
+    """
+    return await catalog_service.match_games(
+        session,
+        matching_client,
+        pickup_point_id,
+        players,
+        playtime_max,
+        category_ids or [],
+        limit,
     )
 
 

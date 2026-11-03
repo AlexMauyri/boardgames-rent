@@ -41,6 +41,7 @@ from app.services.catalog import (
     list_categories,
     list_games,
     list_pickup_points_public,
+    match_games,
     search_available_games,
 )
 from app.services.damage import report_damage, resolve_damage_report
@@ -57,6 +58,7 @@ from app.services.exceptions import (
     InvalidTransitionError,
     NotAvailableError,
     NotFoundError,
+    ServiceUnavailableError,
     ServiceValueError,
 )
 from app.services.manager import (
@@ -69,6 +71,7 @@ from app.services.manager import (
 from app.services.orders import (
     cancel_order,
     create_order,
+    quote_order,
     get_order,
     list_client_orders,
 )
@@ -79,6 +82,7 @@ __all__ = [
     "InvalidTransitionError",
     "NotAvailableError",
     "NotFoundError",
+    "ServiceUnavailableError",
     "ServiceValueError",
     "accept_delivery",
     "accept_return",
@@ -115,9 +119,11 @@ __all__ = [
     "list_point_orders",
     "list_pickup_points_admin",
     "list_pickup_points_public",
+    "quote_order",
     "register_client",
     "report_damage",
     "resolve_damage_report",
+    "match_games",
     "search_available_games",
     "start_delivery",
     "set_game_categories",
