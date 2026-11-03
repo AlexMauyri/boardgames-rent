@@ -2,7 +2,7 @@
 
 from typing import Annotated, NamedTuple
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +13,9 @@ from app.crud import employee as employee_crud
 from app.db.models import Client, Employee
 from app.db.session import get_session
 from app.storage.client import get_storage_client
+from app.integrations.grpc.matching_client import MatchingClient
+from app.integrations.grpc.pricing_client import PricingClient
+from app.integrations.grpc.recommendation_client import RecommendationClient
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -91,6 +94,21 @@ async def get_current_employee(
     return row
 
 
+def get_recommendation_client(request: Request) -> RecommendationClient:
+    """Return the shared recommendation gRPC client from app.state."""
+    return request.app.state.recommendation_client
+
+
+def get_pricing_client(request: Request) -> PricingClient | None:
+    """Return the pricing gRPC client, or None when it is not configured."""
+    return getattr(request.app.state, "pricing_client", None)
+
+
+def get_matching_client(request: Request) -> MatchingClient | None:
+    """Return the matching gRPC client, or None when it is not configured."""
+    return getattr(request.app.state, "matching_client", None)
+
+
 def require_role(*roles: str):
     """Build a dependency that requires an active employee with one of `roles`.
 
@@ -124,4 +142,7 @@ __all__ = [
     "get_session",
     "get_redis",
     "get_storage_client",
+    "get_recommendation_client",
+    "get_pricing_client",
+    "get_matching_client",
 ]

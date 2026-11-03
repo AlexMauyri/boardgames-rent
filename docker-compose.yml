@@ -23,6 +23,7 @@ services:
       PGDATA: /var/lib/postgresql/data/pgdata
       MIGRATION_USER_PASSWORD: ${MIGRATION_USER_PASSWORD}
       APP_USER_PASSWORD: ${APP_USER_PASSWORD}
+      READER_USER_PASSWORD: ${READER_USER_PASSWORD}
     ports:
       - "${POSTGRES_HOST_PORT:-5433}:5432"
     volumes:
@@ -194,8 +195,13 @@ services:
       DPOP_IAT_WINDOW_SECONDS: ${DPOP_IAT_WINDOW_SECONDS}
       DPOP_JTI_TTL_SECONDS: ${DPOP_JTI_TTL_SECONDS}
       DPOP_REQUIRE_NONCE: ${DPOP_REQUIRE_NONCE}
+      GRPC_RECOMMENDATION_ADDR: ${GRPC_RECOMMENDATION_ADDR}
+      GRPC_CA_CERT_PATH: ${GRPC_CA_CERT_PATH}
+      GRPC_TIMEOUT_SECONDS: ${GRPC_TIMEOUT_SECONDS}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - ./infra/grpc_certs:/app/certs:ro
     networks:
       - boardgame_frontend
       - boardgame_backend
@@ -208,6 +214,8 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      grpc:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
       interval: 30s
@@ -215,6 +223,54 @@ services:
       retries: 3
       start_period: 15s
     stop_grace_period: 35s
+
+  grpc:
+    build:
+      context: ./services/grpc
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: boardgame_grpc
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      POSTGRES_USER: reader_user
+      POSTGRES_PASSWORD: ${READER_USER_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      GRPC_PORT: 50051
+      GRPC_SERVER_KEY_PATH: /app/certs/server.key
+      GRPC_SERVER_CERT_PATH: /app/certs/server.crt
+      GRPC_CA_CERT_PATH: /app/certs/ca.crt
+      GRPC_DEFAULT_LIMIT: ${GRPC_DEFAULT_LIMIT:-10}
+      GRPC_MAX_CANDIDATES: ${GRPC_MAX_CANDIDATES:-300}
+      GRPC_MAX_HISTORY_GAMES: ${GRPC_MAX_HISTORY_GAMES:-20}
+      GRPC_QUERY_TIMEOUT_SECONDS: ${GRPC_QUERY_TIMEOUT_SECONDS:-3.0}
+    ports:
+      - "${GRPC_PORT:-50051}:50051"
+    volumes:
+      - ./infra/grpc_certs:/app/certs:ro
+    networks:
+      - boardgame_backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.health_check"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    stop_grace_period: 15s
 
   backend-test:
     build:
@@ -255,6 +311,11 @@ services:
       DPOP_IAT_WINDOW_SECONDS: ${DPOP_IAT_WINDOW_SECONDS}
       DPOP_JTI_TTL_SECONDS: ${DPOP_JTI_TTL_SECONDS}
       DPOP_REQUIRE_NONCE: ${DPOP_REQUIRE_NONCE}
+      GRPC_RECOMMENDATION_ADDR: ${GRPC_RECOMMENDATION_ADDR}
+      GRPC_CA_CERT_PATH: ${GRPC_CA_CERT_PATH}
+      GRPC_TIMEOUT_SECONDS: ${GRPC_TIMEOUT_SECONDS}
+    volumes:
+      - ./infra/grpc_certs:/app/certs:ro
     networks:
       - boardgame_backend
     depends_on:
@@ -263,6 +324,41 @@ services:
       rustfs-init:
         condition: service_completed_successfully
       redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      grpc:
+        condition: service_healthy
+
+  grpc-test:
+    build:
+      context: ./services/grpc
+      dockerfile: Dockerfile
+      target: test
+    container_name: boardgame_grpc_test
+    restart: "no"
+    profiles: ["test"]
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      POSTGRES_USER: app_user
+      POSTGRES_PASSWORD: ${APP_USER_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      APP_USER_PASSWORD: ${APP_USER_PASSWORD}
+      READER_USER_PASSWORD: ${READER_USER_PASSWORD}
+      GRPC_PORT: 50051
+    networks:
+      - boardgame_backend
+    depends_on:
+      postgres:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully

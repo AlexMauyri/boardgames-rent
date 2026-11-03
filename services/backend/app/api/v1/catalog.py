@@ -11,15 +11,26 @@ import redis.asyncio as redis
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_redis, get_session
+from app.api.deps import (
+    get_matching_client,
+    get_redis,
+    get_recommendation_client,
+    get_session,
+)
+from app.crud import board_game, game_copy
+from app.integrations.grpc.matching_client import MatchingClient
+from app.integrations.grpc.recommendation_client import RecommendationClient
 from app.schemas import (
     BoardGameRead,
     CategoryRead,
     GameSearchItem,
+    MatchedGameItem,
     PickupPointRead,
+    SimilarGameItem,
 )
 from app.services import catalog as catalog_service
 from app.services import catalog_cache
+from app.services.exceptions import NotFoundError
 
 router = APIRouter()
 
@@ -105,3 +116,79 @@ async def search_available_games(
         skip=skip,
         limit=limit,
     )
+
+
+@router.get("/match", response_model=list[MatchedGameItem])
+async def match_games(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    matching_client: Annotated[MatchingClient | None, Depends(get_matching_client)],
+    pickup_point_id: int = Query(...),
+    players: int = Query(..., ge=1),
+    playtime_max: int = Query(..., ge=1),
+    category_ids: Annotated[list[int] | None, Query()] = None,
+    limit: int = Query(10, ge=1),
+) -> list[MatchedGameItem]:
+    """Pick games for a meeting: players, time and (optionally) categories.
+
+    Candidates are ranked by the gRPC matching service; games collectable at
+    the pickup point rank above those that need a delivery.
+    """
+    return await catalog_service.match_games(
+        session,
+        matching_client,
+        pickup_point_id,
+        players,
+        playtime_max,
+        category_ids or [],
+        limit,
+    )
+
+
+@router.get(
+    "/games/{game_id}/similar",
+    response_model=list[SimilarGameItem],
+)
+async def get_similar_games(
+    game_id: int,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    recommendation_client: Annotated[
+        RecommendationClient, Depends(get_recommendation_client)
+    ],
+    limit: Annotated[int, Query(ge=1)] = 10,
+) -> list[SimilarGameItem]:
+    """Return games similar to ``game_id``, filtered by availability.
+
+    Raises:
+        NotFoundError: No board game with that id.
+    """
+    target = await board_game.get(session, game_id)
+    if target is None:
+        raise NotFoundError("BoardGame", game_id)
+
+    recs = await recommendation_client.get_similar_games(
+        target_game_id=game_id,
+        exclude_game_ids=[game_id],
+        limit=limit * 3,
+    )
+    if not recs:
+        return []
+
+    candidate_ids = [r.game_id for r in recs]
+    free_copies = await game_copy.count_free(session, candidate_ids)
+    available_ids = {g for (g, _) in free_copies.keys()}
+
+    filtered = [r for r in recs if r.game_id in available_ids][:limit]
+    if not filtered:
+        return []
+
+    games = await board_game.get_many(session, [r.game_id for r in filtered])
+    games_by_id = {g.id: g for g in games}
+
+    return [
+        SimilarGameItem(
+            game=BoardGameRead.model_validate(games_by_id[r.game_id]),
+            reason=r.reason,
+        )
+        for r in filtered
+        if r.game_id in games_by_id
+    ]

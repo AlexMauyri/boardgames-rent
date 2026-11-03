@@ -46,6 +46,26 @@ class OrderCreate(BaseModel):
         return self
 
 
+class PriceQuoteRead(BaseModel):
+    """Price of a prospective rental, as computed by the pricing service.
+
+    Attributes:
+        rental_days: Rental duration, both end dates included.
+        subtotal: Cost before the discount.
+        discount_percent: Duration discount, 0 when the rental is too short.
+        discount_amount: Money taken off the subtotal.
+        total_price: Amount to pay for the rental.
+        deposit: Refundable deposit to be paid on top.
+    """
+
+    rental_days: int
+    subtotal: Decimal
+    discount_percent: int
+    discount_amount: Decimal
+    total_price: Decimal
+    deposit: Decimal
+
+
 class OrderItemRead(ORMBase):
     """Order line as returned by the API.
 

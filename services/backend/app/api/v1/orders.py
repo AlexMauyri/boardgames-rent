@@ -5,9 +5,10 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_client, get_session
+from app.api.deps import get_current_client, get_pricing_client, get_session
 from app.db.models import Client
-from app.schemas import OrderCreate, OrderDetailRead, OrderRead
+from app.integrations.grpc.pricing_client import PricingClient
+from app.schemas import OrderCreate, OrderDetailRead, OrderRead, PriceQuoteRead
 from app.services import orders as orders_service
 
 router = APIRouter()
@@ -22,9 +23,23 @@ async def create_order(
     payload: OrderCreate,
     client: Annotated[Client, Depends(get_current_client)],
     session: Annotated[AsyncSession, Depends(get_session)],
+    pricing: Annotated[PricingClient | None, Depends(get_pricing_client)],
 ) -> OrderDetailRead:
     """Place a new rental order for the current client."""
-    return await orders_service.create_order(session, client.id, payload)
+    return await orders_service.create_order(
+        session, client.id, payload, pricing=pricing,
+    )
+
+
+@router.post("/quote", response_model=PriceQuoteRead)
+async def quote_order(
+    payload: OrderCreate,
+    client: Annotated[Client, Depends(get_current_client)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    pricing: Annotated[PricingClient | None, Depends(get_pricing_client)],
+) -> PriceQuoteRead:
+    """Price a rental without placing it: duration discount and deposit."""
+    return await orders_service.quote_order(session, payload, pricing=pricing)
 
 
 @router.get("", response_model=list[OrderRead])

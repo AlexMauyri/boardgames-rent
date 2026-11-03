@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package recommendation.v1;
+
+message GameRecommendation {
+  int64 game_id = 1;
+  double score = 2;
+  string reason = 3;
+}
+
+message GetSimilarGamesRequest {
+  int64 target_game_id = 1;
+  repeated int64 exclude_game_ids = 2;
+  int32 limit = 3;
+}
+
+message GetSimilarGamesResponse {
+  repeated GameRecommendation games = 1;
+}
+
+message GetPersonalRecommendationsRequest {
+  int64 client_id = 1;
+  repeated int64 exclude_game_ids = 2;
+  int32 limit = 3;
+}
+
+message GetPersonalRecommendationsResponse {
+  repeated GameRecommendation games = 1;
+}
+
+service RecommendationService {
+  rpc GetSimilarGames(GetSimilarGamesRequest) returns (GetSimilarGamesResponse);
+  rpc GetPersonalRecommendations(GetPersonalRecommendationsRequest)
+      returns (GetPersonalRecommendationsResponse);
+}
