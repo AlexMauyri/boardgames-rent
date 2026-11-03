@@ -16,5 +16,71 @@
   {"scenario": "completed_with_damage", "client_email": "client.anna@bgrent.io", "point": "Север", "game_titles": ["Манчкин"], "start_offset_days": 0, "duration_days": 1, "damages": [{"for_game": "Манчкин", "description": "утеряна карта сокровища", "deposit_withheld": "100.00"}]},
   {"scenario": "cancelled", "client_email": "client.dmitry@bgrent.io", "point": "Аврора", "game_titles": ["Эверделл"], "start_offset_days": 2, "duration_days": 3},
   {"scenario": "cancelled", "client_email": "client.olga@bgrent.io", "point": "Победа", "game_titles": ["Брасс: Бирмингем"], "start_offset_days": 1, "duration_days": 5},
-  {"scenario": "ready", "client_email": "client.sergey@bgrent.io", "point": "Октябрьский", "game_titles": ["Кодовые имена: Дуэт"], "start_offset_days": 1, "duration_days": 2}
+  {"scenario": "ready", "client_email": "client.sergey@bgrent.io", "point": "Октябрьский", "game_titles": ["Кодовые имена: Дуэт"], "start_offset_days": 1, "duration_days": 2},
+
+  {"scenario": "completed", "client_email": "client.ivan@bgrent.io", "point": "Центр", "game_titles": ["Каркассон", "Катан"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.ivan@bgrent.io", "point": "Центр", "game_titles": ["Каркассон", "Ticket to Ride"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.ivan@bgrent.io", "point": "Центр", "game_titles": ["Катан", "Splendor"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.ivan@bgrent.io", "point": "Центр", "game_titles": ["Каркассон", "Катан", "Ticket to Ride"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.ivan@bgrent.io", "point": "Центр", "game_titles": ["Splendor", "Каркассон"], "start_offset_days": 0, "duration_days": 3},
+
+  {"scenario": "completed", "client_email": "client.maria@bgrent.io", "point": "Центр", "game_titles": ["Codenames", "Доббль"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.maria@bgrent.io", "point": "Центр", "game_titles": ["Codenames", "Мафия"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.maria@bgrent.io", "point": "Центр", "game_titles": ["Мафия", "Доббль"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.maria@bgrent.io", "point": "Центр", "game_titles": ["Codenames", "Мафия", "Доббль"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.maria@bgrent.io", "point": "Центр", "game_titles": ["Codenames", "Доббль"], "start_offset_days": 0, "duration_days": 3},
+
+  {"scenario": "completed", "client_email": "client.petr@bgrent.io", "point": "Юг", "game_titles": ["Пандемия", "7 Wonders"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.petr@bgrent.io", "point": "Юг", "game_titles": ["Пандемия", "Диксит"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.petr@bgrent.io", "point": "Юг", "game_titles": ["7 Wonders", "Диксит"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.petr@bgrent.io", "point": "Юг", "game_titles": ["Пандемия", "7 Wonders", "Диксит"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.petr@bgrent.io", "point": "Юг", "game_titles": ["Пандемия", "7 Wonders"], "start_offset_days": 0, "duration_days": 3},
+
+  {"scenario": "completed", "client_email": "client.anna@bgrent.io", "point": "Волга", "game_titles": ["Мачи Коро", "Azul"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.anna@bgrent.io", "point": "Волга", "game_titles": ["Мачи Коро", "7 Wonders"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.anna@bgrent.io", "point": "Волга", "game_titles": ["Azul", "7 Wonders"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.anna@bgrent.io", "point": "Волга", "game_titles": ["Мачи Коро", "Azul", "7 Wonders"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.anna@bgrent.io", "point": "Волга", "game_titles": ["Мачи Коро", "Azul"], "start_offset_days": 0, "duration_days": 3},
+
+  {"scenario": "completed", "client_email": "client.dmitry@bgrent.io", "point": "Аврора", "game_titles": ["Эверделл", "Каркассон"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.dmitry@bgrent.io", "point": "Аврора", "game_titles": ["Эверделл", "Диксит"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.dmitry@bgrent.io", "point": "Аврора", "game_titles": ["Каркассон", "Диксит"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.dmitry@bgrent.io", "point": "Аврора", "game_titles": ["Эверделл", "Каркассон", "Диксит"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.dmitry@bgrent.io", "point": "Аврора", "game_titles": ["Эверделл", "Каркассон"], "start_offset_days": 0, "duration_days": 3},
+
+  {"scenario": "completed", "client_email": "client.olga@bgrent.io", "point": "Победа", "game_titles": ["Доббль", "Codenames"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.olga@bgrent.io", "point": "Победа", "game_titles": ["Доббль", "Splendor"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.olga@bgrent.io", "point": "Победа", "game_titles": ["Codenames", "Splendor"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.olga@bgrent.io", "point": "Победа", "game_titles": ["Доббль", "Codenames", "Splendor"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.olga@bgrent.io", "point": "Победа", "game_titles": ["Доббль", "Codenames"], "start_offset_days": 0, "duration_days": 3},
+
+  {"scenario": "completed", "client_email": "client.sergey@bgrent.io", "point": "Центр", "game_titles": ["Codenames", "Мафия"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.sergey@bgrent.io", "point": "Центр", "game_titles": ["Codenames", "Ticket to Ride"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.sergey@bgrent.io", "point": "Центр", "game_titles": ["Мафия", "Ticket to Ride"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.sergey@bgrent.io", "point": "Центр", "game_titles": ["Codenames", "Мафия", "Ticket to Ride"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.sergey@bgrent.io", "point": "Центр", "game_titles": ["Codenames", "Мафия"], "start_offset_days": 0, "duration_days": 3},
+
+  {"scenario": "completed", "client_email": "client.tatiana@bgrent.io", "point": "Юг", "game_titles": ["Пандемия", "Катан"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.tatiana@bgrent.io", "point": "Юг", "game_titles": ["Пандемия", "Диксит"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.tatiana@bgrent.io", "point": "Юг", "game_titles": ["Катан", "Диксит"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.tatiana@bgrent.io", "point": "Юг", "game_titles": ["Пандемия", "Катан", "Диксит"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.tatiana@bgrent.io", "point": "Юг", "game_titles": ["Пандемия", "Катан"], "start_offset_days": 0, "duration_days": 3},
+
+  {"scenario": "completed", "client_email": "client.alexey@bgrent.io", "point": "Центр", "game_titles": ["Ticket to Ride", "Splendor"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.alexey@bgrent.io", "point": "Центр", "game_titles": ["Ticket to Ride", "Codenames"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.alexey@bgrent.io", "point": "Центр", "game_titles": ["Splendor", "Codenames"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.alexey@bgrent.io", "point": "Центр", "game_titles": ["Ticket to Ride", "Splendor", "Codenames"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.alexey@bgrent.io", "point": "Центр", "game_titles": ["Ticket to Ride", "Splendor"], "start_offset_days": 0, "duration_days": 3},
+
+  {"scenario": "completed", "client_email": "client.ekaterina@bgrent.io", "point": "Север", "game_titles": ["Пандемия", "Мафия"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.ekaterina@bgrent.io", "point": "Север", "game_titles": ["Пандемия", "Манчкин"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.ekaterina@bgrent.io", "point": "Север", "game_titles": ["Мафия", "Манчкин"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.ekaterina@bgrent.io", "point": "Север", "game_titles": ["Пандемия", "Мафия", "Манчкин"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.ekaterina@bgrent.io", "point": "Север", "game_titles": ["Пандемия", "Мафия"], "start_offset_days": 0, "duration_days": 3},
+
+  {"scenario": "completed", "client_email": "client.nikolay@bgrent.io", "point": "Волга", "game_titles": ["Катан", "Azul"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.nikolay@bgrent.io", "point": "Волга", "game_titles": ["Катан", "Мачи Коро"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.nikolay@bgrent.io", "point": "Волга", "game_titles": ["Azul", "Мачи Коро"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.nikolay@bgrent.io", "point": "Волга", "game_titles": ["Катан", "Azul", "Мачи Коро"], "start_offset_days": 0, "duration_days": 3},
+  {"scenario": "completed", "client_email": "client.nikolay@bgrent.io", "point": "Волга", "game_titles": ["Катан", "Azul"], "start_offset_days": 0, "duration_days": 3}
 ]
