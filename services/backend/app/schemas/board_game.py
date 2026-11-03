@@ -149,6 +149,27 @@ class GameSearchItem(BaseModel):
     free_at_point: int
     free_elsewhere: int
 
+class MatchedGameItem(BaseModel):
+    """A game ranked for a meeting, with its stock.
+
+    Attributes:
+        game: The catalog entry.
+        score: Match quality in (0, 1], higher is better; 0.0 when the
+            matching service was unavailable and a plain filter was used.
+        reason: Why the game ranks where it does; one of ``fits_meeting``,
+            ``category_match``, ``needs_delivery``, ``slightly_long`` or
+            ``fallback_filter``.
+        free_at_point: Free boxes already on the chosen pickup point's shelf.
+        free_elsewhere: Free boxes at other points; a delivery is needed.
+    """
+
+    game: BoardGameRead
+    score: float
+    reason: str
+    free_at_point: int
+    free_elsewhere: int
+
+
 class SimilarGameItem(BaseModel):
     """A recommended game with the reason it was suggested.
 

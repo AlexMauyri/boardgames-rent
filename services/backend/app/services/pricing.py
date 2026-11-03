@@ -1,13 +1,15 @@
 """Rental price calculation.
 
-A pure function with no database access. It is the seam where the gRPC
-pricing service will plug in later: callers depend only on `PriceQuote`.
+`calculate_price` is a pure function with no database access and no
+discount. The gRPC pricing service applies the real rules; callers depend
+only on `PriceQuote` and `PriceCalculator`, so either can serve a request.
 """
 
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
+from typing import Protocol
 
 _CENT = Decimal("0.01")
 
@@ -18,13 +20,36 @@ class PriceQuote:
 
     Attributes:
         rental_days: Number of rental days, both end dates included.
-        total_price: Rental cost for all boxes over all days.
+        total_price: Rental cost for all boxes over all days, after the
+            discount.
         deposit: Refundable deposit for all boxes.
+        discount_percent: Duration discount already taken off, 0 if none.
+        discount_amount: Money taken off the undiscounted cost.
     """
 
     rental_days: int
     total_price: Decimal
     deposit: Decimal
+    discount_percent: int = 0
+    discount_amount: Decimal = Decimal("0.00")
+
+    @property
+    def subtotal(self) -> Decimal:
+        """Rental cost before the discount."""
+        return self.total_price + self.discount_amount
+
+
+class PriceCalculator(Protocol):
+    """Anything that can price a rental asynchronously, e.g. the gRPC client."""
+
+    async def calculate_price(
+        self,
+        daily_prices: Sequence[Decimal],
+        deposits: Sequence[Decimal],
+        start_date: date,
+        end_date: date,
+    ) -> PriceQuote:
+        """Price a rental of several boxes."""
 
 
 def rental_days(start_date: date, end_date: date) -> int:
