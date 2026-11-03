@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package matching.v1;
+
+// A catalog game that already passed the availability check, together with
+// the stock figures the ranking needs.
+message GameCandidate {
+  int64 game_id = 1;
+  int32 min_players = 2;
+  int32 max_players = 3;
+  int32 playtime_minutes = 4;
+  repeated int64 category_ids = 5;
+  int32 free_at_point = 6;
+  int32 free_elsewhere = 7;
+}
+
+message RankGamesRequest {
+  int32 players = 1;
+  int32 max_playtime_minutes = 2;
+  repeated int64 preferred_category_ids = 3;
+  repeated GameCandidate candidates = 4;
+  int32 limit = 5;
+}
+
+message RankedGame {
+  int64 game_id = 1;
+  double score = 2;
+  string reason = 3;
+}
+
+message RankGamesResponse {
+  repeated RankedGame games = 1;
+}
+
+service MatchingService {
+  rpc RankGames(RankGamesRequest) returns (RankGamesResponse);
+}

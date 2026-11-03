@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package pricing.v1;
+
+// One rented box. Money is a decimal string ("300.00"): binary floating point
+// would accumulate rounding errors on prices.
+message RentalLine {
+  string daily_price = 1;
+  string deposit = 2;
+}
+
+message CalculatePriceRequest {
+  repeated RentalLine lines = 1;
+  int32 rental_days = 2;
+}
+
+message CalculatePriceResponse {
+  int32 rental_days = 1;
+  string subtotal = 2;
+  int32 discount_percent = 3;
+  string discount_amount = 4;
+  string total_price = 5;
+  string deposit = 6;
+}
+
+service PricingService {
+  rpc CalculatePrice(CalculatePriceRequest) returns (CalculatePriceResponse);
+}
