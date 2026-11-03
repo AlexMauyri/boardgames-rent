@@ -12,6 +12,7 @@ from app.services.exceptions import (
     InvalidTransitionError,
     NotAvailableError,
     NotFoundError,
+    ServiceUnavailableError,
     ServiceValueError,
 )
 
@@ -59,6 +60,12 @@ async def _service_value(_: Request, exc: ServiceValueError) -> JSONResponse:
     return JSONResponse(status_code=422, content=_body(str(exc)))
 
 
+async def _service_unavailable(
+    _: Request, exc: ServiceUnavailableError,
+) -> JSONResponse:
+    return JSONResponse(status_code=503, content=_body(str(exc)))
+
+
 async def _s3_error(_: Request, exc: S3Error) -> JSONResponse:
     return JSONResponse(status_code=502, content=_body("Object storage error"))
 
@@ -93,6 +100,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(NotAvailableError, _not_available)
     app.add_exception_handler(InvalidTokenError, _invalid_token)
     app.add_exception_handler(ServiceValueError, _service_value)
+    app.add_exception_handler(ServiceUnavailableError, _service_unavailable)
     app.add_exception_handler(S3Error, _s3_error)
     app.add_exception_handler(DpopError, _dpop_error)
     app.add_exception_handler(DpopNonceRequired, _dpop_nonce_required)

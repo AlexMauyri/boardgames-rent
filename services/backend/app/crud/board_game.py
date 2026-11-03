@@ -85,6 +85,22 @@ class CRUDBoardGame(CRUDBase[BoardGame]):
         result = await session.execute(stmt)
         return list(result.scalars().all())
 
+    async def list_with_categories(
+        self,
+        session: AsyncSession,
+        *,
+        limit: int = 10_000,
+    ) -> list[BoardGame]:
+        """List board games with their categories eagerly loaded, id-ascending."""
+        stmt = (
+            select(BoardGame)
+            .options(selectinload(BoardGame.categories))
+            .order_by(BoardGame.id)
+            .limit(limit)
+        )
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
     async def create_with_categories(
         self,
         session: AsyncSession,

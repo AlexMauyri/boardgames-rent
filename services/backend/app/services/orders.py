@@ -19,7 +19,8 @@ from app.crud import (
     order,
     pickup_point,
 )
-from app.schemas import OrderCreate, OrderDetailRead, OrderRead
+from app.db.models import BoardGame
+from app.schemas import OrderCreate, OrderDetailRead, OrderRead, PriceQuoteRead
 from app.services.exceptions import (
     ForbiddenError,
     InvalidTransitionError,
@@ -27,7 +28,7 @@ from app.services.exceptions import (
     ServiceValueError,
 )
 from app.services.fulfilment import plan_fulfilment
-from app.services.pricing import calculate_price
+from app.services.pricing import PriceCalculator, PriceQuote, calculate_price
 
 logger = logging.getLogger(__name__)
 
@@ -36,10 +37,68 @@ _CANCELLABLE = ("CREATED", "NEEDS_TRANSFER", "READY_FOR_PICKUP")
 _DELIVERY_NOT_STARTED = ("CREATED", "ACCEPTED")
 
 
+async def _price(
+    games: dict[int, BoardGame],
+    needed: Counter[int],
+    data: OrderCreate,
+    pricing: PriceCalculator | None,
+) -> PriceQuote:
+    """Price the requested games; the pricing service when one is given.
+
+    Every box of a game costs the game's tariff, so the quote depends only on
+    the requested games, not on which concrete boxes get chosen.
+    """
+    daily = [games[g].daily_price for g, n in needed.items() for _ in range(n)]
+    deposits = [games[g].deposit_price for g, n in needed.items() for _ in range(n)]
+    if pricing is None:
+        return calculate_price(daily, deposits, data.start_date, data.end_date)
+    return await pricing.calculate_price(
+        daily, deposits, data.start_date, data.end_date,
+    )
+
+
+async def quote_order(
+    session: AsyncSession,
+    data: OrderCreate,
+    pricing: PriceCalculator | None = None,
+) -> PriceQuoteRead:
+    """Price a rental without placing it.
+
+    Args:
+        session: Active async session.
+        data: The order payload that would be placed.
+        pricing: The pricing service; without one the undiscounted local
+            calculation is used.
+
+    Returns:
+        The price breakdown.
+
+    Raises:
+        NotFoundError: A game does not exist.
+        ServiceUnavailableError: The pricing service did not answer.
+    """
+    needed = Counter(data.game_ids)
+    games = {g.id: g for g in await board_game.get_many(session, list(needed))}
+    for game_id in sorted(needed):
+        if game_id not in games:
+            raise NotFoundError("BoardGame", game_id)
+
+    quote = await _price(games, needed, data, pricing)
+    return PriceQuoteRead(
+        rental_days=quote.rental_days,
+        subtotal=quote.subtotal,
+        discount_percent=quote.discount_percent,
+        discount_amount=quote.discount_amount,
+        total_price=quote.total_price,
+        deposit=quote.deposit,
+    )
+
+
 async def create_order(
     session: AsyncSession,
     client_id: int,
     data: OrderCreate,
+    pricing: PriceCalculator | None = None,
 ) -> OrderDetailRead:
     """Place a rental order.
 
@@ -51,6 +110,8 @@ async def create_order(
         session: Active async session.
         client_id: The ordering client.
         data: Validated order payload.
+        pricing: The pricing service; without one the undiscounted local
+            calculation is used.
 
     Returns:
         The created order with its lines.
@@ -61,6 +122,7 @@ async def create_order(
         NotFoundError: The client, the pickup point or a game does not exist.
         ForbiddenError: The client account is disabled.
         NotAvailableError: The games cannot be supplied from current stock.
+        ServiceUnavailableError: The pricing service did not answer.
     """
     if data.start_date < date.today():
         logger.warning(
@@ -99,6 +161,10 @@ async def create_order(
             )
             raise NotFoundError("BoardGame", game_id)
 
+    # Priced before the boxes are locked, so a slow pricing service does not
+    # hold row locks.
+    quote = await _price(games, needed, data, pricing)
+
     candidates = await game_copy.list_available_for_games(
         session, list(needed), lock=True,
     )
@@ -106,12 +172,6 @@ async def create_order(
     free = [c for c in candidates if c.id not in busy]
     plan = plan_fulfilment(free, needed, data.pickup_point_id)
 
-    quote = calculate_price(
-        [games[c.game_id].daily_price for c in plan.copies],
-        [games[c.game_id].deposit_price for c in plan.copies],
-        data.start_date,
-        data.end_date,
-    )
     transfer = plan.source_point_id is not None
 
     row = await order.create_with_items(
@@ -143,9 +203,10 @@ async def create_order(
     result = OrderDetailRead.model_validate(detail)
     await session.commit()
     logger.info(
-        "order created order_id=%s client_id=%s box_count=%s total_price=%s status=%s has_delivery=%s",
+        "order created order_id=%s client_id=%s box_count=%s total_price=%s "
+        "discount_percent=%s status=%s has_delivery=%s",
         result.id, client_id, len(plan.copies),
-        result.total_price, result.status, transfer,
+        result.total_price, quote.discount_percent, result.status, transfer,
     )
     return result
 

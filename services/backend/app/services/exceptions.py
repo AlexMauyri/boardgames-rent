@@ -123,3 +123,10 @@ class ServiceValueError(Exception):
     also swallowing unrelated ValueErrors from libraries or from
     programmer mistakes in the CRUD layer.
     """
+
+class ServiceUnavailableError(Exception):
+    """A required backing service did not answer.
+
+    Raised when a gRPC call fails and the operation has no safe local
+    substitute, so the HTTP layer can report 503 instead of a wrong result.
+    """
