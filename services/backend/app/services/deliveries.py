@@ -18,7 +18,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud import delivery, employee, game_copy, order
 from app.db.models import Delivery
-from app.schemas import DeliveryRead
+from app.schemas import DeliveryRead, OrderRead
+from app.services.events import (
+    EventPublisher,
+    emit_delivery_status_changed,
+    emit_order_status_changed,
+)
 from app.services.exceptions import (
     ForbiddenError,
     InvalidTransitionError,
@@ -118,6 +123,7 @@ async def accept_delivery(
     session: AsyncSession,
     delivery_id: int,
     courier_id: int,
+    events: EventPublisher | None = None,
 ) -> DeliveryRead:
     """Take an open task ("Принять заказ").
 
@@ -125,6 +131,7 @@ async def accept_delivery(
         session: Active async session.
         delivery_id: Primary key of the delivery.
         courier_id: The courier taking the task.
+        events: Event publisher; None disables notifications.
 
     Returns:
         The accepted delivery.
@@ -157,6 +164,7 @@ async def accept_delivery(
         "delivery accepted delivery_id=%s courier_id=%s order_id=%s",
         delivery_id, courier_id, row.order_id,
     )
+    await emit_delivery_status_changed(events, result)
     return result
 
 
@@ -164,6 +172,7 @@ async def start_delivery(
     session: AsyncSession,
     delivery_id: int,
     courier_id: int,
+    events: EventPublisher | None = None,
 ) -> DeliveryRead:
     """Mark the boxes as picked up and on the road ("Забрал, в пути").
 
@@ -171,6 +180,7 @@ async def start_delivery(
         session: Active async session.
         delivery_id: Primary key of the delivery.
         courier_id: The courier; must be the one who accepted the task.
+        events: Event publisher; None disables notifications.
 
     Returns:
         The delivery in transit.
@@ -211,15 +221,19 @@ async def start_delivery(
         copy.status = "IN_TRANSIT"
         copy.current_point_id = None
     row.status = "IN_TRANSIT"
+    old_order_status = parent.status
     parent.status = "IN_TRANSIT"
     await session.flush()
 
     result = DeliveryRead.model_validate(row)
+    order_after = OrderRead.model_validate(parent)
     await session.commit()
     logger.info(
         "delivery started delivery_id=%s courier_id=%s order_id=%s boxes_moved=%s",
         delivery_id, courier_id, row.order_id, len(moving),
     )
+    await emit_delivery_status_changed(events, result)
+    await emit_order_status_changed(events, order_after, old_order_status)
     return result
 
 
@@ -227,6 +241,7 @@ async def complete_delivery(
     session: AsyncSession,
     delivery_id: int,
     courier_id: int,
+    events: EventPublisher | None = None,
 ) -> DeliveryRead:
     """Hand the boxes over at the destination ("Доставлено").
 
@@ -236,6 +251,7 @@ async def complete_delivery(
         session: Active async session.
         delivery_id: Primary key of the delivery.
         courier_id: The courier; must be the one carrying the boxes.
+        events: Event publisher; None disables notifications.
 
     Returns:
         The finished delivery.
@@ -265,13 +281,17 @@ async def complete_delivery(
             delivered += 1
     row.status = "DELIVERED"
     row.delivered_at = datetime.now(UTC)
+    old_order_status = parent.status
     parent.status = "READY_FOR_PICKUP"
     await session.flush()
 
     result = DeliveryRead.model_validate(row)
+    order_after = OrderRead.model_validate(parent)
     await session.commit()
     logger.info(
         "delivery completed delivery_id=%s courier_id=%s order_id=%s to_point_id=%s boxes_delivered=%s",
         delivery_id, courier_id, row.order_id, row.to_point_id, delivered,
     )
+    await emit_delivery_status_changed(events, result)
+    await emit_order_status_changed(events, order_after, old_order_status)
     return result

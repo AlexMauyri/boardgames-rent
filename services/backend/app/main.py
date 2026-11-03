@@ -14,11 +14,12 @@ from app.integrations.grpc.channel import open_secure_channel
 from app.integrations.grpc.matching_client import MatchingClient
 from app.integrations.grpc.pricing_client import PricingClient
 from app.integrations.grpc.recommendation_client import RecommendationClient
+from app.integrations.rabbitmq.publisher import RabbitPublisher
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup: verify RustFS, gRPC service and Redis are reachable. Setup logging."""
+    """Startup: verify RustFS and Redis, open gRPC and RabbitMQ clients. Setup logging."""
     setup_logging()
     await bootstrap_storage(app)
     await bootstrap_redis(app)
@@ -31,9 +32,14 @@ async def lifespan(app: FastAPI):
     app.state.pricing_client = PricingClient(compute_channel)
     app.state.matching_client = MatchingClient(compute_channel)
 
+    event_publisher = RabbitPublisher()
+    await event_publisher.start()
+    app.state.event_publisher = event_publisher
+
     try:
         yield
     finally:
+        await event_publisher.close()
         await compute_channel.close()
         await recommendation_client.close()
 

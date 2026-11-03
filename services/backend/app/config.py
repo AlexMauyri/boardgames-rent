@@ -69,6 +69,15 @@ class Settings(BaseSettings):
         alias="GRPC_TIMEOUT_SECONDS",
     )
 
+    rabbitmq_url: str = Field(
+        default="amqp://guest:guest@localhost:5672/",
+        alias="RABBITMQ_URL",
+    )
+    rabbitmq_exchange: str = Field(
+        default="boardgame.events",
+        alias="RABBITMQ_EXCHANGE",
+    )
+
     jwt_secret: str = Field(alias="JWT_SECRET")
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
     access_token_ttl: int = Field(default=900, alias="ACCESS_TOKEN_TTL")

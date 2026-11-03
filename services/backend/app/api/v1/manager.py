@@ -10,8 +10,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_session, require_role
+from app.api.deps import get_event_publisher, get_session, require_role
 from app.db.models import Employee
+from app.integrations.rabbitmq.publisher import RabbitPublisher
 from app.schemas import (
     DamageReportCreate,
     DamageReportRead,
@@ -28,6 +29,7 @@ from app.services import manager as manager_service
 router = APIRouter()
 
 _Manager = Annotated[Employee, Depends(require_role("MANAGER"))]
+_Events = Annotated[RabbitPublisher | None, Depends(get_event_publisher)]
 
 
 @router.get("/orders", response_model=list[OrderRead])
@@ -72,9 +74,12 @@ async def issue_order(
     order_id: int,
     manager: _Manager,
     session: Annotated[AsyncSession, Depends(get_session)],
+    events: _Events,
 ) -> OrderRead:
     """Hand the boxes to the client; the order becomes ACTIVE."""
-    return await manager_service.issue_order(session, order_id, manager.id)
+    return await manager_service.issue_order(
+        session, order_id, manager.id, events=events,
+    )
 
 
 @router.post("/orders/{order_id}/return", response_model=OrderReturnResult)
@@ -83,10 +88,11 @@ async def accept_return(
     payload: OrderReturnCreate,
     manager: _Manager,
     session: Annotated[AsyncSession, Depends(get_session)],
+    events: _Events,
 ) -> OrderReturnResult:
     """Take the boxes back; the order becomes COMPLETED."""
     return await manager_service.accept_return(
-        session, order_id, manager.id, payload,
+        session, order_id, manager.id, payload, events=events,
     )
 
 
