@@ -16,6 +16,8 @@ ROLE_CLIENT = "CLIENT"
 ROLE_COURIER = "COURIER"
 
 _ORDER_STATUS_TEXT = {
+    "CREATED": "Заказ создан",
+    "NEEDS_TRANSFER": "Требуется перемещение между пунктами",
     "IN_TRANSIT": "Игра в пути в пункт выдачи",
     "READY_FOR_PICKUP": "Заказ готов к выдаче",
     "ACTIVE": "Игра выдана",

@@ -12,6 +12,10 @@ from app.hub import ConnectionHub
 
 logger = logging.getLogger(__name__)
 
+_AE_EXCHANGE = "events.ae"
+_UNROUTABLE_QUEUE = "events.unroutable"
+_BINDING_KEYS = ("v1.order.*", "v1.delivery.*")
+
 
 async def handle_body(body: bytes, hub: ConnectionHub) -> int:
     """Turn one broker message into notifications and deliver them.
@@ -64,18 +68,31 @@ async def run_consumer(hub: ConnectionHub) -> None:
         async with connection:
             channel = await connection.channel()
             await channel.set_qos(prefetch_count=10)
+
+            ae = await channel.declare_exchange(
+                _AE_EXCHANGE, aio_pika.ExchangeType.FANOUT, durable=True,
+            )
+            unroutable_q = await channel.declare_queue(
+                _UNROUTABLE_QUEUE, durable=True,
+            )
+            await unroutable_q.bind(ae)
+
             exchange = await channel.declare_exchange(
                 settings.rabbitmq_exchange,
                 aio_pika.ExchangeType.TOPIC,
                 durable=True,
+                arguments={"alternate-exchange": _AE_EXCHANGE},
             )
             queue = await channel.declare_queue(
                 settings.rabbitmq_queue, durable=True,
             )
-            await queue.bind(exchange, routing_key="#")
+            for binding_key in _BINDING_KEYS:
+                await queue.bind(exchange, routing_key=binding_key)
             logger.info(
-                "consuming queue=%s exchange=%s",
-                settings.rabbitmq_queue, settings.rabbitmq_exchange,
+                "consuming queue=%s exchange=%s bindings=%s",
+                settings.rabbitmq_queue,
+                settings.rabbitmq_exchange,
+                ",".join(_BINDING_KEYS),
             )
 
             async with queue.iterator() as messages:
