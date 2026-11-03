@@ -75,6 +75,11 @@ from app.services.orders import (
     get_order,
     list_client_orders,
 )
+from app.services.recommendations import (
+    get_personal_recommendations,
+    get_similar_games,
+)
+
 
 __all__ = [
     "ConflictError",
@@ -132,4 +137,6 @@ __all__ = [
     "update_game_copy",
     "update_game",
     "update_pickup_point",
+    "get_personal_recommendations",
+    "get_similar_games",
 ]

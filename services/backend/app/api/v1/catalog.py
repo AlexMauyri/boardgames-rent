@@ -17,7 +17,6 @@ from app.api.deps import (
     get_recommendation_client,
     get_session,
 )
-from app.crud import board_game, game_copy
 from app.integrations.grpc.matching_client import MatchingClient
 from app.integrations.grpc.recommendation_client import RecommendationClient
 from app.schemas import (
@@ -30,7 +29,7 @@ from app.schemas import (
 )
 from app.services import catalog as catalog_service
 from app.services import catalog_cache
-from app.services.exceptions import NotFoundError
+from app.services import recommendations as recommendations_service
 
 router = APIRouter()
 
@@ -161,34 +160,6 @@ async def get_similar_games(
     Raises:
         NotFoundError: No board game with that id.
     """
-    target = await board_game.get(session, game_id)
-    if target is None:
-        raise NotFoundError("BoardGame", game_id)
-
-    recs = await recommendation_client.get_similar_games(
-        target_game_id=game_id,
-        exclude_game_ids=[game_id],
-        limit=limit * 3,
+    return await recommendations_service.get_similar_games(
+        session, recommendation_client, game_id, limit,
     )
-    if not recs:
-        return []
-
-    candidate_ids = [r.game_id for r in recs]
-    free_copies = await game_copy.count_free(session, candidate_ids)
-    available_ids = {g for (g, _) in free_copies.keys()}
-
-    filtered = [r for r in recs if r.game_id in available_ids][:limit]
-    if not filtered:
-        return []
-
-    games = await board_game.get_many(session, [r.game_id for r in filtered])
-    games_by_id = {g.id: g for g in games}
-
-    return [
-        SimilarGameItem(
-            game=BoardGameRead.model_validate(games_by_id[r.game_id]),
-            reason=r.reason,
-        )
-        for r in filtered
-        if r.game_id in games_by_id
-    ]
