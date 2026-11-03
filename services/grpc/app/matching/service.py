@@ -32,6 +32,11 @@ class MatchingServicer(matching_pb2_grpc.MatchingServiceServicer):
                when ``limit`` is 0).
         """
         if request.players < 1 or request.max_playtime_minutes < 1:
+            logger.warning(
+                    "RankGames rejected reason=invalid_meeting "
+                    "players=%s max_playtime=%s",
+                    request.players, request.max_playtime_minutes,
+            )
             await context.abort(
                 grpc.StatusCode.INVALID_ARGUMENT,
                 "players and max_playtime_minutes must be positive",

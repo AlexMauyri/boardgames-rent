@@ -61,6 +61,11 @@ class RecommendationServicer(
                 await get_game_content(session, [request.target_game_id])
             ).get(request.target_game_id)
             if target_content is None:
+                logger.warning(
+                    "GetSimilarGames rejected reason=not_found "
+                    "target_game_id=%s",
+                    request.target_game_id,
+                )
                 await context.abort(
                     grpc.StatusCode.NOT_FOUND,
                     f"board game {request.target_game_id} not found",
@@ -75,6 +80,11 @@ class RecommendationServicer(
                 return recommendation_pb2.GetSimilarGamesResponse()
 
             ranked = sorted(cooc_by_game.items(), key=lambda kv: -kv[1])
+            if len(ranked) > settings.grpc_max_candidates:
+                logger.debug(
+                    "GetSimilarGames prefilter cut total=%s kept=%s",
+                    len(ranked), settings.grpc_max_candidates,
+                )
             candidate_ids = [
                 game_id for game_id, _ in ranked[:settings.grpc_max_candidates]
             ]
@@ -156,6 +166,11 @@ class RecommendationServicer(
             )
 
             if not history:
+                logger.info(
+                    "GetPersonalRecommendations fallback "
+                    "path=cold_start client_id=%s",
+                    request.client_id,
+                )
                 return await self._fallback_popular(
                     session, exclude_ids=excluded,
                     category_ids=[], limit=limit,
@@ -180,6 +195,11 @@ class RecommendationServicer(
                     )
 
             if not cooc_by_candidate:
+                logger.info(
+                    "GetPersonalRecommendations fallback "
+                    "path=no_cooc_candidates client_id=%s",
+                    request.client_id,
+                )
                 history_categories: set[int] = set()
                 for content in history_contents.values():
                     history_categories |= content.category_ids
@@ -227,6 +247,12 @@ class RecommendationServicer(
                     reasons[gid] = best_reason
 
             if not scores:
+                logger.info(
+                    "GetPersonalRecommendations fallback "
+                    "path=no_scored_candidates client_id=%s "
+                    "candidates=%s",
+                    request.client_id, len(candidate_ids),
+                )
                 history_categories = set()
                 for content in history_contents.values():
                     history_categories |= content.category_ids
