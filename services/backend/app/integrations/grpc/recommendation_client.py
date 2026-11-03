@@ -15,37 +15,10 @@ logger = logging.getLogger(__name__)
 
 
 class RecommendationClient:
-    """Holds a single TLS channel and a typed stub for the service."""
+    """Typed stub for ``RecommendationService`` over a shared channel."""
 
-    def __init__(self) -> None:
-        self._channel: grpc.aio.Channel | None = None
-        self._stub: recommendation_pb2_grpc.RecommendationServiceStub | None = None
-
-    async def start(self) -> None:
-        """Open the TLS channel and create the stub."""
-        with open(settings.grpc_ca_cert_path, "rb") as f:
-            trusted_certs = f.read()
-
-        credentials = grpc.ssl_channel_credentials(
-            root_certificates=trusted_certs,
-        )
-        self._channel = grpc.aio.secure_channel(
-            settings.grpc_recommendation_addr, credentials,
-        )
-        self._stub = recommendation_pb2_grpc.RecommendationServiceStub(
-            self._channel,
-        )
-        logger.info(
-            "recommendation gRPC client ready: %s",
-            settings.grpc_recommendation_addr,
-        )
-
-    async def close(self) -> None:
-        """Close the channel. Called on shutdown."""
-        if self._channel is not None:
-            await self._channel.close()
-            self._channel = None
-            self._stub = None
+    def __init__(self, channel: grpc.aio.Channel) -> None:
+        self._stub = recommendation_pb2_grpc.RecommendationServiceStub(channel)
 
     async def get_similar_games(
         self,
@@ -54,9 +27,6 @@ class RecommendationClient:
         limit: int = 10,
     ) -> list[recommendation_pb2.GameRecommendation]:
         """Call GetSimilarGames; return [] on any gRPC error."""
-        if self._stub is None:
-            return []
-
         request = recommendation_pb2.GetSimilarGamesRequest(
             target_game_id=target_game_id,
             exclude_game_ids=exclude_game_ids,
@@ -81,9 +51,6 @@ class RecommendationClient:
         limit: int = 10,
     ) -> list[recommendation_pb2.GameRecommendation]:
         """Call GetPersonalRecommendations; return [] on any gRPC error."""
-        if self._stub is None:
-            return []
-
         request = recommendation_pb2.GetPersonalRecommendationsRequest(
             client_id=client_id,
             exclude_game_ids=exclude_game_ids,

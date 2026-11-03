@@ -17,5 +17,19 @@ def open_secure_channel() -> grpc.aio.Channel:
 
     credentials = grpc.ssl_channel_credentials(root_certificates=trusted_certs)
     return grpc.aio.secure_channel(
-        settings.grpc_recommendation_addr, credentials,
+        settings.grpc_service_addr, credentials,
     )
+
+
+async def probe_channel(channel: grpc.aio.Channel) -> None:
+    """Fail fast if the compute service is unreachable.
+
+    Establishes TCP + TLS handshake without making an RPC.
+    """
+    try:
+        await channel.channel_ready()
+    except grpc.aio.AioRpcError as exc:
+        raise RuntimeError(
+            f"gRPC compute service unreachable at "
+            f"{settings.grpc_recommendation_addr}: {exc.code()}"
+        ) from exc

@@ -56,9 +56,9 @@ class Settings(BaseSettings):
     redis_url: str = Field(alias="REDIS_URL")
     catalog_cache_ttl: int = Field(default=600, alias="CATALOG_CACHE_TTL")
 
-    grpc_recommendation_addr: str = Field(
-        default="recommendation-grpc:50051",
-        alias="GRPC_RECOMMENDATION_ADDR",
+    grpc_service_addr: str = Field(
+        default="grpc:50051",
+        alias="GRPC_SERVICE_ADDR",
     )
     grpc_ca_cert_path: str = Field(
         default="/app/certs/ca.crt",
