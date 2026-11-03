@@ -5,14 +5,16 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_session, require_role
+from app.api.deps import get_event_publisher, get_session, require_role
 from app.db.models import Employee
+from app.integrations.rabbitmq.publisher import RabbitPublisher
 from app.schemas import DeliveryRead
 from app.services import deliveries as deliveries_service
 
 router = APIRouter()
 
 _Courier = Annotated[Employee, Depends(require_role("COURIER"))]
+_Events = Annotated[RabbitPublisher | None, Depends(get_event_publisher)]
 
 
 @router.get("/deliveries/open", response_model=list[DeliveryRead])
@@ -47,10 +49,11 @@ async def accept_delivery(
     delivery_id: int,
     courier: _Courier,
     session: Annotated[AsyncSession, Depends(get_session)],
+    events: _Events,
 ) -> DeliveryRead:
     """Take an open task. The calling courier becomes its assignee."""
     return await deliveries_service.accept_delivery(
-        session, delivery_id, courier.id,
+        session, delivery_id, courier.id, events=events,
     )
 
 
@@ -59,10 +62,11 @@ async def start_delivery(
     delivery_id: int,
     courier: _Courier,
     session: Annotated[AsyncSession, Depends(get_session)],
+    events: _Events,
 ) -> DeliveryRead:
     """Mark the boxes as picked up and on the road."""
     return await deliveries_service.start_delivery(
-        session, delivery_id, courier.id,
+        session, delivery_id, courier.id, events=events,
     )
 
 
@@ -71,8 +75,9 @@ async def complete_delivery(
     delivery_id: int,
     courier: _Courier,
     session: Annotated[AsyncSession, Depends(get_session)],
+    events: _Events,
 ) -> DeliveryRead:
     """Hand the boxes over at the destination."""
     return await deliveries_service.complete_delivery(
-        session, delivery_id, courier.id,
+        session, delivery_id, courier.id, events=events,
     )

@@ -21,6 +21,7 @@ from app.schemas import (
     OrderReturnResult,
     OrderStatus,
 )
+from app.services.events import EventPublisher, emit_order_status_changed
 from app.services.exceptions import (
     ForbiddenError,
     InvalidTransitionError,
@@ -145,6 +146,7 @@ async def issue_order(
     session: AsyncSession,
     order_id: int,
     manager_id: int,
+    events: EventPublisher | None = None,
 ) -> OrderRead:
     """Hand the boxes to the client ("Выдать").
 
@@ -154,6 +156,7 @@ async def issue_order(
         session: Active async session.
         order_id: The booking number.
         manager_id: The manager; must work at the order's pickup point.
+        events: Event publisher; None disables notifications.
 
     Returns:
         The active order.
@@ -203,6 +206,7 @@ async def issue_order(
         "order issued order_id=%s manager_id=%s box_count=%s",
         order_id, manager_id, len(copies),
     )
+    await emit_order_status_changed(events, result, "READY_FOR_PICKUP")
     return result
 
 
@@ -211,6 +215,7 @@ async def accept_return(
     order_id: int,
     manager_id: int,
     data: OrderReturnCreate,
+    events: EventPublisher | None = None,
 ) -> OrderReturnResult:
     """Take the boxes back, record damage and finish the rental.
 
@@ -223,6 +228,7 @@ async def accept_return(
         order_id: The booking number.
         manager_id: The manager accepting the boxes.
         data: Inspection result; empty `damages` means all intact.
+        events: Event publisher; None disables notifications.
 
     Returns:
         The completed order, the reports filed and the deposit to refund.
@@ -308,4 +314,5 @@ async def accept_return(
         order_id, manager_id, len(copies), len(data.damages),
         withheld, result.deposit_refund,
     )
+    await emit_order_status_changed(events, result.order, "ACTIVE")
     return result

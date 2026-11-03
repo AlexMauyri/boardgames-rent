@@ -16,6 +16,7 @@ from app.storage.client import get_storage_client
 from app.integrations.grpc.matching_client import MatchingClient
 from app.integrations.grpc.pricing_client import PricingClient
 from app.integrations.grpc.recommendation_client import RecommendationClient
+from app.integrations.rabbitmq.publisher import RabbitPublisher
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -109,6 +110,11 @@ def get_matching_client(request: Request) -> MatchingClient | None:
     return getattr(request.app.state, "matching_client", None)
 
 
+def get_event_publisher(request: Request) -> RabbitPublisher | None:
+    """Return the event publisher, or None when events are not configured."""
+    return getattr(request.app.state, "event_publisher", None)
+
+
 def require_role(*roles: str):
     """Build a dependency that requires an active employee with one of `roles`.
 
@@ -145,4 +151,5 @@ __all__ = [
     "get_recommendation_client",
     "get_pricing_client",
     "get_matching_client",
+    "get_event_publisher",
 ]

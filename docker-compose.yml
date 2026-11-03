@@ -130,6 +130,30 @@ services:
       retries: 10
       start_period: 5s
 
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    container_name: boardgame_rabbitmq
+    restart: unless-stopped
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    volumes:
+      - boardgame_rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - boardgame_backend
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
   migrate:
     build:
       context: ./services/backend
@@ -198,6 +222,8 @@ services:
       GRPC_RECOMMENDATION_ADDR: ${GRPC_RECOMMENDATION_ADDR}
       GRPC_CA_CERT_PATH: ${GRPC_CA_CERT_PATH}
       GRPC_TIMEOUT_SECONDS: ${GRPC_TIMEOUT_SECONDS}
+      RABBITMQ_URL: "amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/"
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:-boardgame.events}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
@@ -215,6 +241,8 @@ services:
       migrate:
         condition: service_completed_successfully
       grpc:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
@@ -269,6 +297,41 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
+    stop_grace_period: 15s
+
+  notification:
+    build:
+      context: ./services/notification
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: boardgame_notification
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ALGORITHM: ${JWT_ALGORITHM}
+      RABBITMQ_URL: "amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/"
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:-boardgame.events}
+      RABBITMQ_QUEUE: ${RABBITMQ_QUEUE:-notifications}
+    networks:
+      - boardgame_frontend
+      - boardgame_backend
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health', timeout=5)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
       start_period: 10s
     stop_grace_period: 15s
 
@@ -363,6 +426,25 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  notification-test:
+    build:
+      context: ./services/notification
+      dockerfile: Dockerfile
+      target: test
+    container_name: boardgame_notification_test
+    restart: "no"
+    profiles: ["test"]
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      JWT_SECRET: ${JWT_SECRET}
+
   nginx:
     image: nginx:1.27-alpine
     container_name: boardgame_nginx
@@ -391,6 +473,8 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+      notification:
+        condition: service_healthy
       rustfs:
         condition: service_healthy
     healthcheck:
@@ -410,6 +494,8 @@ volumes:
     name: boardgame_rustfs_logs
   boardgame_redis_data:
     name: boardgame_redis_data
+  boardgame_rabbitmq_data:
+    name: boardgame_rabbitmq_data
 
 networks:
   boardgame_backend:

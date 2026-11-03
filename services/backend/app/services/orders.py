@@ -21,6 +21,14 @@ from app.crud import (
 )
 from app.db.models import BoardGame
 from app.schemas import OrderCreate, OrderDetailRead, OrderRead, PriceQuoteRead
+from app.services.events import (
+    DELIVERY_CANCELLED,
+    DELIVERY_CREATED,
+    ORDER_CREATED,
+    EventPublisher,
+    emit,
+    emit_order_status_changed,
+)
 from app.services.exceptions import (
     ForbiddenError,
     InvalidTransitionError,
@@ -99,6 +107,7 @@ async def create_order(
     client_id: int,
     data: OrderCreate,
     pricing: PriceCalculator | None = None,
+    events: EventPublisher | None = None,
 ) -> OrderDetailRead:
     """Place a rental order.
 
@@ -112,6 +121,7 @@ async def create_order(
         data: Validated order payload.
         pricing: The pricing service; without one the undiscounted local
             calculation is used.
+        events: Event publisher; None disables notifications.
 
     Returns:
         The created order with its lines.
@@ -189,8 +199,9 @@ async def create_order(
             (c.id, games[c.game_id].daily_price) for c in plan.copies
         ],
     )
+    task = None
     if transfer:
-        await delivery.create(
+        task = await delivery.create(
             session,
             data={
                 "order_id": row.id,
@@ -208,6 +219,20 @@ async def create_order(
         result.id, client_id, len(plan.copies),
         result.total_price, quote.discount_percent, result.status, transfer,
     )
+    await emit(events, ORDER_CREATED, {
+        "order_id": result.id,
+        "client_id": client_id,
+        "pickup_point_id": result.pickup_point_id,
+        "status": result.status,
+        "total_price": str(result.total_price),
+    })
+    if task is not None:
+        await emit(events, DELIVERY_CREATED, {
+            "delivery_id": task.id,
+            "order_id": result.id,
+            "from_point_id": task.from_point_id,
+            "to_point_id": task.to_point_id,
+        })
     return result
 
 
@@ -264,6 +289,7 @@ async def cancel_order(
     session: AsyncSession,
     order_id: int,
     client_id: int,
+    events: EventPublisher | None = None,
 ) -> OrderRead:
     """Cancel a client's order and release its boxes.
 
@@ -274,6 +300,7 @@ async def cancel_order(
         session: Active async session.
         order_id: Primary key of the order.
         client_id: The client asking; must own the order.
+        events: Event publisher; None disables notifications.
 
     Returns:
         The cancelled order.
@@ -295,7 +322,9 @@ async def cancel_order(
 
     old_status = row.status
     delivery_deleted = False
+    cancelled_delivery_id = None
     if task is not None and task.status in _DELIVERY_NOT_STARTED:
+        cancelled_delivery_id = task.id
         await session.delete(task)
         delivery_deleted = True
     row.status = "CANCELLED"
@@ -307,4 +336,10 @@ async def cancel_order(
         "order cancelled order_id=%s client_id=%s old_status=%s delivery_deleted=%s",
         order_id, client_id, old_status, delivery_deleted,
     )
+    await emit_order_status_changed(events, result, old_status)
+    if cancelled_delivery_id is not None:
+        await emit(events, DELIVERY_CANCELLED, {
+            "delivery_id": cancelled_delivery_id,
+            "order_id": order_id,
+        })
     return result

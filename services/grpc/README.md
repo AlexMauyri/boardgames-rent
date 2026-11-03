@@ -59,6 +59,20 @@
 В бэкенде вызывается из `GET /catalog/match`. Если сервис недоступен,
 используется обычный фильтр (оценка 0, причина `fallback_filter`).
 
+## Запуск
+
+Сервис работает по TLS. Сертификаты для разработки (CA и серверный сертификат
+для хостов `grpc` и `localhost`) создаёт скрипт, результат кладётся в
+`infra/grpc_certs` (каталог в `.gitignore`, монтируется в контейнеры `grpc`
+и `backend`):
+
+```bash
+bash infra/grpc/gen-certs.sh
+docker compose up
+```
+
+В `.env` должно быть `GRPC_RECOMMENDATION_ADDR=grpc:50051`.
+
 ## Заглушки protobuf
 
 После изменения `.proto`:

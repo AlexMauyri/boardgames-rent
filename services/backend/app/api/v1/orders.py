@@ -5,9 +5,15 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_client, get_pricing_client, get_session
+from app.api.deps import (
+    get_current_client,
+    get_event_publisher,
+    get_pricing_client,
+    get_session,
+)
 from app.db.models import Client
 from app.integrations.grpc.pricing_client import PricingClient
+from app.integrations.rabbitmq.publisher import RabbitPublisher
 from app.schemas import OrderCreate, OrderDetailRead, OrderRead, PriceQuoteRead
 from app.services import orders as orders_service
 
@@ -24,10 +30,11 @@ async def create_order(
     client: Annotated[Client, Depends(get_current_client)],
     session: Annotated[AsyncSession, Depends(get_session)],
     pricing: Annotated[PricingClient | None, Depends(get_pricing_client)],
+    events: Annotated[RabbitPublisher | None, Depends(get_event_publisher)],
 ) -> OrderDetailRead:
     """Place a new rental order for the current client."""
     return await orders_service.create_order(
-        session, client.id, payload, pricing=pricing,
+        session, client.id, payload, pricing=pricing, events=events,
     )
 
 
@@ -72,6 +79,9 @@ async def cancel_order(
     order_id: int,
     client: Annotated[Client, Depends(get_current_client)],
     session: Annotated[AsyncSession, Depends(get_session)],
+    events: Annotated[RabbitPublisher | None, Depends(get_event_publisher)],
 ) -> OrderRead:
     """Cancel one of the current client's orders and release its boxes."""
-    return await orders_service.cancel_order(session, order_id, client.id)
+    return await orders_service.cancel_order(
+        session, order_id, client.id, events=events,
+    )
