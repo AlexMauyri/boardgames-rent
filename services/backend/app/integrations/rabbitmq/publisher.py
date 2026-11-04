@@ -15,6 +15,7 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 _CONNECT_TIMEOUT = 3.0
+_ROUTING_KEY_VERSION = "v1"
 
 
 class RabbitPublisher:
@@ -58,6 +59,7 @@ class RabbitPublisher:
                     settings.rabbitmq_exchange,
                     aio_pika.ExchangeType.TOPIC,
                     durable=True,
+                    arguments={"alternate-exchange": "events.ae"},
                 )
                 self._connection = connection
                 logger.info(
@@ -83,6 +85,9 @@ class RabbitPublisher:
                 message_id=envelope["id"],
                 type=event_type,
             ),
-            routing_key=event_type,
+            routing_key=self._build_routing_key(event_type),
         )
         logger.info("event published type=%s id=%s", event_type, envelope["id"])
+
+    def _build_routing_key(self, event_type: str) -> str:
+        return f"{_ROUTING_KEY_VERSION}.{event_type}"

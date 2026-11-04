@@ -1,16 +1,10 @@
 """Configuration for the notification service."""
 
 from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_file=(".env", "../../.env"),
-        env_file_encoding="utf-8",
-        extra="ignore",
-    )
-
     jwt_secret: str = Field(alias="JWT_SECRET")
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
 
