@@ -1,3 +1,5 @@
-.env
+.env*
+**/.env*
+!.env.example
 **/__pycache__/
 infra/grpc_certs

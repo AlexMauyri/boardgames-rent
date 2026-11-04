@@ -6,7 +6,7 @@ All configuration is sourced from environment variables / `.env`.
 """
 
 from pydantic import Field, BaseModel
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class RateLimitRule(BaseModel):
@@ -27,6 +27,12 @@ _DEFAULT_RULES: dict[str, RateLimitRule] = {
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=(".env.local"),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
     postgres_user: str = Field(alias="POSTGRES_USER")
     postgres_password: str = Field(alias="POSTGRES_PASSWORD")
     postgres_db: str = Field(alias="POSTGRES_DB")
